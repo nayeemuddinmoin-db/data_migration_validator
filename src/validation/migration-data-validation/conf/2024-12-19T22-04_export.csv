@@ -1,0 +1,328 @@
+﻿entry_id,workflow_name,table_family,src_connection_name,src_table,tgt_connection_name,tgt_table,col_mapping,tgt_primary_keys,date_bucket,mismatch_exclude_fields,exclude_fields_from_summary,filter,addtnl_filters,src_data_load_filter,tgt_data_load_filter,validation_data_db,retain_tables_list,validation_is_active
+1,mmp,people_all_match,databricks,mmp.mpillai.databricks_sample_all_match_src_tbl,databricks,mmp.mpillai.databricks_sample_all_match_tgt_tbl,{},id,birthdate,UPDATE_TSTMP|LOAD_TSTMP,,,"[
+	{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,mmp.mpillai,,true
+2,mmp,people_pk_violations,databricks,mmp.mpillai.databricks_sample_pk_violation_src_tbl,databricks,mmp.mpillai.databricks_sample_pk_violation_extras_tgt_tbl,{},id,birthdate,UPDATE_TSTMP|LOAD_TSTMP,,,"[
+	{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,mmp.mpillai,,true
+3,mmp,people_schema_data_mismatch,databricks,mmp.mpillai.databricks_sample_schema_data_mismatch_src_tbl,databricks,mmp.mpillai.databricks_sample_schema_data_mismatch_tgt_tbl,{},id,birthdate,UPDATE_TSTMP|LOAD_TSTMP,,,"[
+	{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,mmp.mpillai,,true
+4,mmp,people_data_mismatch,databricks,mmp.mpillai.databricks_sample_data_mismatch_src_tbl,databricks,mmp.mpillai.databricks_sample_data_mismatch_tgt_tbl,{},id,birthdate,UPDATE_TSTMP|LOAD_TSTMP,mismatches_after_exclusion_status,,"[
+	{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,mmp.mpillai,,true
+5,mmp,people_extras,databricks,mmp.mpillai.databricks_sample_extras_src_tbl,databricks,mmp.mpillai.databricks_sample_extras_tgt_tbl,{},id,birthdate,UPDATE_TSTMP|LOAD_TSTMP,,,"[
+	{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,mmp.mpillai,,true
+6,training,TRAINING_FOOTBALL,netezza_dev,mmp.mpillai.ADMIN.TRAINING_FOOTBALL,databricks,qa_mmp.mpillai.TRAINING_FOOTBALL,"{
+	  ""SRC"": ""TGT"",
+	  ""SRC"": ""SRC""
+	}",TRAINING_FOOTBALL_ID,SRC_LAST_MODIFIED_TSTMP,UPDATE_TSTMP|LOAD_TSTMP,,,"[
+	{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,mmp.mpillai,,true
+7,training,TRAINING_CRICKET,netezza_dev,mmp.mpillai.ADMIN.TRAINING_CRICKET,databricks,qa_mmp.mpillai.TRAINING_CRICKET,{},TRAINING_CATEGORY_ID,,UPDATE_TSTMP|LOAD_TSTMP,,,"[{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,mmp.mpillai,,true
+8,training,TRAINING_BASKETBALL,netezza_dev,mmp.mpillai.ADMIN.TRAINING_BASKETBALL,databricks,qa_mmp.mpillai.TRAINING_BASKETBALL,{},TRAINING_BASKETBALL_ID,SRC_CREATE_TSTMP,UPDATE_TSTMP|LOAD_TSTMP,,,"[{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,mmp.mpillai,,true
+9,misc,MISC_TASK,snowflake_qa,mmp.mpillai_dev.public.MISC_TASK,databricks,qa_mmp.mpillai.MISC_TASK,{},LOCATION_ID|MISC_TASK_ID,MISC_MOD_TSTMP,UPDATE_TSTMP|LOAD_TSTMP,,(LOCATION_ID = US OR LOCATION_ID = CA),"[{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": false
+	},
+
+	{
+		""filter_name"": ""LOCATION_ID"",
+		""filter"": ""LOCATION_ID_tgt = US OR  LOCATION_ID_tgt = CA"",
+		""capture_mismatches"": false
+	},
+	{
+		""filter_name"": ""LOCATION_ID and MISC_LAST_UPDATED_TSTMP"",
+		""filter"": ""(LOCATION_ID_tgt = US OR  LOCATION_ID_tgt = CA) and (MISC_MOD_TSTMP_src<=(select max(MISC_MOD_TSTMP_tgt) from {full_outer_table}))"",
+		""capture_mismatches"": true
+	}
+]",(LOCATION_ID = US OR LOCATION_ID = CA),(LOCATION_ID = US OR LOCATION_ID = CA),mmp.mpillai,,true
+10,oracle_test,CUSTOMER_DEMOGRAPHICS,oracle_rds,ADMIN.CUSTOMER_DEMOGRAPHICS,databricks,jaimin.tpch.customer_demographics,{},CD_DEMO_SK,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,src_tbl|tgt_tbl|full_outer,true
+11,oracle_test,CALL_CENTER,oracle_rds,ADMIN.CALL_CENTER,databricks,jaimin.tpch.CALL_CENTER,{},CC_CALL_CENTER_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+12,oracle_test,CATALOG_PAGE,oracle_rds,ADMIN.CATALOG_PAGE,databricks,jaimin.tpch.CATALOG_PAGE,{},CP_CATALOG_PAGE_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+13,oracle_test,CATALOG_RETURNS,oracle_rds,ADMIN.CATALOG_RETURNS,databricks,jaimin.tpch.CATALOG_RETURNS,{},CR_RETURNED_DATE_SK|CR_RETURNED_TIME_SK,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+14,oracle_test,CATALOG_SALES,oracle_rds,ADMIN.CATALOG_SALES,databricks,jaimin.tpch.CATALOG_SALES,{},CS_SOLD_DATE_SK|CS_SOLD_TIME_SK,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+15,oracle_test,CUSTOMER,oracle_rds,ADMIN.CUSTOMER,databricks,jaimin.tpch.CUSTOMER,{},C_CUSTOMER_ID|C_CURRENT_CDEMO_SK,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+16,oracle_test,CUSTOMER_ADDRESS,oracle_rds,ADMIN.CUSTOMER_ADDRESS,databricks,jaimin.tpch.CUSTOMER_ADDRESS,{},CA_ADDRESS_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+17,oracle_test,DATE_DIM,oracle_rds,ADMIN.DATE_DIM,databricks,jaimin.tpch.DATE_DIM,{},D_DATE_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+18,oracle_test,HOUSEHOLD_DEMOGRAPHICS,oracle_rds,ADMIN.HOUSEHOLD_DEMOGRAPHICS,databricks,jaimin.tpch.HOUSEHOLD_DEMOGRAPHICS,{},HD_DEMO_SK,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+19,oracle_test,INCOME_BAND,oracle_rds,ADMIN.INCOME_BAND,databricks,jaimin.tpch.INCOME_BAND,{},IB_INCOME_BAND_SK,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+20,oracle_test,INVENTORY,oracle_rds,ADMIN.INVENTORY,databricks,jaimin.tpch.INVENTORY,{},INV_DATE_SK|INV_ITEM_SK,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+21,oracle_test,ITEM,oracle_rds,ADMIN.ITEM,databricks,jaimin.tpch.ITEM,{},I_ITEM_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+22,oracle_test,PROMOTION,oracle_rds,ADMIN.PROMOTION,databricks,jaimin.tpch.PROMOTION,{},P_PROMO_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+23,oracle_test,REASON,oracle_rds,ADMIN.REASON,databricks,jaimin.tpch.REASON,{},R_REASON_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+24,oracle_test,SHIP_MODE,oracle_rds,ADMIN.SHIP_MODE,databricks,jaimin.tpch.SHIP_MODE,{},SM_SHIP_MODE_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+25,oracle_test,SNP_INVENTORY,oracle_rds,ADMIN.SNP_INVENTORY,databricks,jaimin.tpch.SNP_INVENTORY,{},DATE_KEY|CHAIN_KEY,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+26,oracle_test,STORE,oracle_rds,ADMIN.STORE,databricks,jaimin.tpch.STORE,{},S_STORE_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+27,oracle_test,STORE_RETURNS,oracle_rds,ADMIN.STORE_RETURNS,databricks,jaimin.tpch.STORE_RETURNS,{},SR_RETURNED_DATE_SK|SR_RETURN_TIME_SK,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+28,oracle_test,STORE_SALES,oracle_rds,ADMIN.STORE_SALES,databricks,jaimin.tpch.STORE_SALES,{},SS_SOLD_DATE_SK|SS_SOLD_TIME_SK,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+29,oracle_test,TIME_DIM,oracle_rds,ADMIN.TIME_DIM,databricks,jaimin.tpch.TIME_DIM,{},T_TIME_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+30,oracle_test,WAREHOUSE,oracle_rds,ADMIN.WAREHOUSE,databricks,jaimin.tpch.WAREHOUSE,{},W_WAREHOUSE_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+31,oracle_test,WEB_PAGE,oracle_rds,ADMIN.WEB_PAGE,databricks,jaimin.tpch.WEB_PAGE,{},WP_WEB_PAGE_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+32,oracle_test,WEB_RETURNS,oracle_rds,ADMIN.WEB_RETURNS,databricks,jaimin.tpch.WEB_RETURNS,{},WR_RETURNED_DATE_SK|WR_RETURNED_TIME_SK,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+33,oracle_test,WEB_SALES,oracle_rds,ADMIN.WEB_SALES,databricks,jaimin.tpch.WEB_SALES,{},WS_SOLD_DATE_SK|WS_SOLD_TIME_SK,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,src_tbl|tgt_tbl|full_outer,true
+34,oracle_test,WEB_SITE,oracle_rds,ADMIN.WEB_SITE,databricks,jaimin.tpch.WEB_SITE,{},WEB_SITE_ID,,replicate_io_split_key|replicate_io_partition_key|replicate_io_subpartition_key|REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+35,sqlserver_test,mlb_data,sqlserver_rds,dbo.mlb_data,databricks,jaimin.dms_sample.mlb_data,{},mlb_id,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+36,sqlserver_test,employees,sqlserver_rds,dbo.employees,databricks,jaimin.dms_sample.employees,{},EmployeeID,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+37,sqlserver_test,name_data,sqlserver_rds,dbo.name_data,databricks,jaimin.dms_sample.name_data,{},name_type|name,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+38,sqlserver_test,nfl_data,sqlserver_rds,dbo.nfl_data,databricks,jaimin.dms_sample.nfl_data,{},name,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+39,sqlserver_test,nfl_stadium_data,sqlserver_rds,dbo.nfl_stadium_data,databricks,jaimin.dms_sample.nfl_stadium_data,{},stadium|location|team,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+40,sqlserver_test,person,sqlserver_rds,dbo.person,databricks,jaimin.dms_sample.person,{},ID,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+41,sqlserver_test,player,sqlserver_rds,dbo.player,databricks,jaimin.dms_sample.player,{},id,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+42,sqlserver_test,seat,sqlserver_rds,dbo.seat,databricks,jaimin.dms_sample.seat,{},sport_location_id|seat_level|seat_section|seat_row|seat|seat_type,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+43,sqlserver_test,seat_type,sqlserver_rds,dbo.seat_type,databricks,jaimin.dms_sample.seat_type,{},name,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+44,sqlserver_test,sport_division,sqlserver_rds,dbo.sport_division,databricks,jaimin.dms_sample.sport_division,{},sport_type_name|sport_league_short_name|short_name,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+45,sqlserver_test,sport_league,sqlserver_rds,dbo.sport_league,databricks,jaimin.dms_sample.sport_league,{},short_name,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+46,sqlserver_test,sport_location,sqlserver_rds,dbo.sport_location,databricks,jaimin.dms_sample.sport_location,{},id,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+47,sqlserver_test,sport_team,sqlserver_rds,dbo.sport_team,databricks,jaimin.dms_sample.sport_team,{},id,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+48,sqlserver_test,sport_type,sqlserver_rds,dbo.sport_type,databricks,jaimin.dms_sample.sport_type,{},name,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+49,sqlserver_test,sporting_event,sqlserver_rds,dbo.sporting_event,databricks,jaimin.dms_sample.sporting_event,{},id,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+50,sqlserver_test,sporting_event_ticket,sqlserver_rds,dbo.sporting_event_ticket,databricks,jaimin.dms_sample.sporting_event_ticket,{},id,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+51,sqlserver_test,ticket_purchase_hist,sqlserver_rds,dbo.ticket_purchase_hist,databricks,jaimin.dms_sample.ticket_purchase_hist,{},sporting_event_ticket_id|purchased_by_id|transaction_date_time,,REPLICATE_IO_METADATA_VERSION,,,"[{
+""filter_name"": ""N/A"",
+""filter"": ""N/A"",
+""capture_mismatches"": true
+}
+]",,,mmp.mpillai,,true
+52,Test,ticket_purchase_hist,sqlserver_rds,dbo.ticket_purchase_hist,,,,,,,,,,,,,,

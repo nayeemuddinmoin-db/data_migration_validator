@@ -1,0 +1,24 @@
+bundle:
+  name: hello-world-app
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://adb-984752964297111.11.azuredatabricks.net/ # change to your own host URL
+    resources:
+      apps:
+        hello-world-app:
+          name: "hello-world-app-dev"
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-984752964297111.11.azuredatabricks.net/ # change to your own host URL
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    permissions:
+      - user_name: ${workspace.current_user.userName}
+        level: CAN_MANAGE

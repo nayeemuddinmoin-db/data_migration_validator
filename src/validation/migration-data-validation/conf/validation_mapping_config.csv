@@ -1,0 +1,75 @@
+entry_id,workflow_name,table_family,src_connection_name,src_table,tgt_connection_name,tgt_table,col_mapping,tgt_primary_keys,date_bucket,mismatch_exclude_fields,exclude_fields_from_summary,filter,addtnl_filters,src_sql_override,tgt_sql_override,src_data_load_filter,tgt_data_load_filter,validation_data_db,retain_tables_list,quick_validation,validation_is_active
+1,mmp,people_all_match,databricks,mmp.mpillai.databricks_sample_all_match_src_tbl,databricks,mmp.mpillai.databricks_sample_all_match_tgt_tbl,{},id,birthdate,UPDATE_TSTMP|LOAD_TSTMP,,,"[
+	{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,,,mmp.mpillai,,FALSE,TRUE
+2,mmp,people_pk_violations,databricks,mmp.mpillai.databricks_sample_pk_violation_src_tbl,databricks,mmp.mpillai.databricks_sample_pk_violation_extras_tgt_tbl,{},id,birthdate,UPDATE_TSTMP|LOAD_TSTMP,,,"[
+	{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,,,mmp.mpillai,,FALSE,TRUE
+3,mmp,people_schema_data_mismatch,databricks,mmp.mpillai.databricks_sample_schema_data_mismatch_src_tbl,databricks,mmp.mpillai.databricks_sample_schema_data_mismatch_tgt_tbl,{},id,birthdate,UPDATE_TSTMP|LOAD_TSTMP,,,"[
+	{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,,,mmp.mpillai,,FALSE,TRUE
+4,mmp,people_data_mismatch,databricks,mmp.mpillai.databricks_sample_data_mismatch_src_tbl,databricks,mmp.mpillai.databricks_sample_data_mismatch_tgt_tbl,{},id,birthdate,UPDATE_TSTMP|LOAD_TSTMP,mismatches_after_exclusion_status,,"[
+	{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,,,mmp.mpillai,,FALSE,TRUE
+5,mmp,people_extras,databricks,mmp.mpillai.databricks_sample_extras_src_tbl,databricks,mmp.mpillai.databricks_sample_extras_tgt_tbl,{},id,birthdate,UPDATE_TSTMP|LOAD_TSTMP,,,"[
+	{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,,,mmp.mpillai,,FALSE,TRUE
+6,training,TRAINING_FOOTBALL,netezza_dev,mmp.mpillai.ADMIN.TRAINING_FOOTBALL,databricks,qa_mmp.mpillai.TRAINING_FOOTBALL,"{
+	  ""SRC"": ""TGT"",
+	  ""SRC"": ""SRC""
+	}",TRAINING_FOOTBALL_ID,SRC_LAST_MODIFIED_TSTMP,UPDATE_TSTMP|LOAD_TSTMP,,,"[
+	{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,,,mmp.mpillai,,FALSE,TRUE
+7,training,TRAINING_CRICKET,netezza_dev,mmp.mpillai.ADMIN.TRAINING_CRICKET,databricks,qa_mmp.mpillai.TRAINING_CRICKET,{},TRAINING_CATEGORY_ID,,UPDATE_TSTMP|LOAD_TSTMP,,,"[{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,,,mmp.mpillai,,FALSE,TRUE
+8,training,TRAINING_BASKETBALL,netezza_dev,mmp.mpillai.ADMIN.TRAINING_BASKETBALL,databricks,qa_mmp.mpillai.TRAINING_BASKETBALL,{},TRAINING_BASKETBALL_ID,SRC_CREATE_TSTMP,UPDATE_TSTMP|LOAD_TSTMP,,,"[{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": true
+	}
+]",,,,,mmp.mpillai,,FALSE,TRUE
+9,misc,MISC_TASK,snowflake_qa,mmp.mpillai_dev.public.MISC_TASK,databricks,qa_mmp.mpillai.MISC_TASK,{},LOCATION_ID|MISC_TASK_ID,MISC_MOD_TSTMP,UPDATE_TSTMP|LOAD_TSTMP,,(LOCATION_ID = US OR LOCATION_ID = CA),"[{
+		""filter_name"": ""N/A"",
+		""filter"": ""N/A"",
+		""capture_mismatches"": false
+	},
+
+	{
+		""filter_name"": ""LOCATION_ID"",
+		""filter"": ""LOCATION_ID_tgt = US OR  LOCATION_ID_tgt = CA"",
+		""capture_mismatches"": false
+	},
+	{
+		""filter_name"": ""LOCATION_ID and MISC_LAST_UPDATED_TSTMP"",
+		""filter"": ""(LOCATION_ID_tgt = US OR  LOCATION_ID_tgt = CA) and (MISC_MOD_TSTMP_src<=(select max(MISC_MOD_TSTMP_tgt) from {full_outer_table}))"",
+		""capture_mismatches"": true
+	}
+]",,,(LOCATION_ID = US OR LOCATION_ID = CA),(LOCATION_ID = US OR LOCATION_ID = CA),mmp.mpillai,,FALSE,TRUE

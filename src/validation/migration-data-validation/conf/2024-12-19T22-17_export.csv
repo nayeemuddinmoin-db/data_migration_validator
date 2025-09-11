@@ -1,0 +1,56 @@
+﻿connection_name,warehouse,jdbc_options,cast_to_string
+netezza_dev,netezza,"{
+  ""hostname"": ""999.99.99.999:5480"",
+  ""user"": {
+    ""secret_scope"": ""netezza_keys"",
+    ""key"": ""username""
+  },
+  ""password"": {
+    ""secret_scope"": ""netezza_keys"",
+    ""key"": ""password""
+  }
+}",TRUE
+snowflake_qa,snowflake,"{
+  ""user"": {
+    ""secret_scope"": ""SNOWFLAKE_NP"",
+    ""key"": ""username""
+  },
+  ""private_key"": {
+    ""secret_scope"": ""SNOWFLAKE_NP"",
+    ""key"": ""pkey""
+  },
+  ""sfRole"": ""role_databricks_nonprd"",
+  ""url"" : ""db.us-central1.gcp.snowflakecomputing.com"",
+  ""warehouse"": ""WH""
+}",TRUE
+databricks,databricks,,TRUE
+oracle_rds,oracle,"{
+  ""hostname"": ""arciontesting.clwwsvhuz9iw.us-east-1.rds.amazonaws.com"",
+  ""port"": ""1521"",
+  ""service_name"" : ""PDB1"",
+  ""user"": {
+    ""secret_scope"": ""mmp"",
+    ""key"": ""rds_oracle_username""
+  },
+  ""password"": {
+    ""secret_scope"": ""mmp"",
+    ""key"": ""rds_oracle_password""
+  }
+}",FALSE
+sqlserver_rds,mssql,"{
+  ""hostname"": ""database2019.clwwsvhuz9iw.us-east-1.rds.amazonaws.com"",
+  ""port"": ""1433"",
+  ""database"": ""dms_sample"",
+  ""user"": {
+    ""secret_scope"": ""mmp"",
+    ""key"": ""rds_oracle_username""
+  },
+  ""password"": {
+    ""secret_scope"": ""mmp"",
+    ""key"": ""rds_oracle_password""
+  },
+  ""additional_options"": {
+  ""encrypt"": ""true"",
+  ""trustServerCertificate"": ""true""
+  }
+}",TRUE
