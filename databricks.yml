@@ -1,5 +1,5 @@
 bundle:
-  name: hello-world-app
+  name: data_migration_validator_app
 
 include:
   - resources/*.yml
@@ -12,8 +12,8 @@ targets:
       host: https://adb-984752964297111.11.azuredatabricks.net/ # change to your own host URL
     resources:
       apps:
-        hello-world-app:
-          name: "hello-world-app-dev"
+        data_migration_validator_app:
+          name: "data_migration_validator_app_dev"
   prod:
     mode: production
     workspace:

@@ -1430,7 +1430,10 @@ def trigger_validation(table_mapping):
   quick_validation = table_mapping.quick_validation
   print("quick_validation-->",quick_validation)
 
-  src_path = "abfss://rilgolddata@pepsiadlsuc.dfs.core.windows.net/samples_tpch_orders/"
+  src_path = "abfss://rilgolddata@pepsiadlsuc.dfs.core.windows.net/orc_test_data/sample_data_with_pii_2/"
+
+#   src_path = "abfss://rilgolddata@pepsiadlsuc.dfs.core.windows.net/samples_tpch_orders/"
+
   try:
     def log_update(status):
       spark.sql(f"""
