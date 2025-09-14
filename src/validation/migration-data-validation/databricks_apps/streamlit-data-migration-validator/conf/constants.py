@@ -12,6 +12,7 @@ CLUSTER_ID = "0911-042014-xhswdssn"
 
 JOB_ID = 550313681799493
 DATABRICKS_INSTANCE = "https://adb-984752964297111.11.azuredatabricks.net"
+
 # ACCESS_TOKEN_SCOPE = "mmp"
 # ACCESS_TOKEN_KEY = "workspace_access_token"
 

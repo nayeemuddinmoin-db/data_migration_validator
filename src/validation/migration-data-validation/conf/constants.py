@@ -9,6 +9,8 @@
 # COMMAND ----------
 
 PARALLELISM = 30
+INGESTION_METADATA_TABLE = "cat_ril_nayeem_01.rildb01.source_file_metadata"
+
 VALIDATION_SYSTEM_DB = "cat_ril_nayeem_02.dmvdbpath_system"
 VALIDATION_METRICS_DB = "cat_ril_nayeem_02.dmvdbpath_system_metrics"
 VALIDATION_EXAMPLE_DB = "cat_ril_nayeem_02.dmvdbpath_system_example"
