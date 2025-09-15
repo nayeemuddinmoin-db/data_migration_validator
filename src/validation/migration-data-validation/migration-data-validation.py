@@ -966,7 +966,7 @@ def create_row_hash_validation_table(table_name, columns, exclude_fields, valida
     hash_table_name = f"{validation_data_db}.{workflow_name}___{table_family.replace('.', '_')}__row_hash_validation"
     
     create_sql = f"""
-    CREATE TABLE {hash_table_name} AS
+    CREATE OR REPLACE TABLE {hash_table_name} AS
     SELECT 
         {row_hash_expr} as p_keys,
         {row_hash_expr} as row_hash,
