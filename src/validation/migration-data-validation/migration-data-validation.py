@@ -1573,16 +1573,43 @@ def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_valid
   metrics['anomalies_table_name'] = anomalies_table_name = f"{validation_data_db}.{workflow_name}___{table_family}__anomalies"
   metrics['quick_validation'] = table_mapping.quick_validation
 
-  metrics['src_records'] = spark.sql(f'select total_record_count src_records from {PRIMARY_KEY_VALIDATION} where iteration_name ="{iteration_name}" and lower(table_family) = lower("{table_family}") and table_name = "{src_tbl}"').collect()[0]["src_records"]
-  metrics['tgt_records'] = spark.sql(f'select total_record_count tgt_records from {PRIMARY_KEY_VALIDATION} where iteration_name ="{iteration_name}" and lower(table_family) = lower("{table_family}") and table_name = "{tgt_tbl}"').collect()[0]["tgt_records"]
-  metrics['src_extras'] = spark.sql(f'select count(type) src_extras from {anomalies_table_name} where iteration_name ="{iteration_name}" and type= "src_extras"').collect()[0]["src_extras"]
-  metrics['tgt_extras'] = spark.sql(f'select count(type) tgt_extras from {anomalies_table_name} where iteration_name ="{iteration_name}" and type= "tgt_extras"').collect()[0]["tgt_extras"]
-  metrics['mismatches'] = spark.sql(f'select count(type) mismatches from {anomalies_table_name} where iteration_name ="{iteration_name}" and type= "src_mismatches"').collect()[0]["mismatches"]
-  metrics['matches'] = metrics['src_records'] - metrics['mismatches'] - metrics['src_extras'] 
-  metrics['src_delta_table_size'] = spark.sql(f"""describe detail {src_validation_tbl}""").select("sizeInBytes").collect()[0]["sizeInBytes"]
-  metrics['tgt_delta_table_size'] = spark.sql(f"""describe detail {tgt_validation_tbl}""").select("sizeInBytes").collect()[0]["sizeInBytes"]
-  metrics['hash_src_records'] = "NULL"
-  metrics['hash_tgt_records'] = "NULL"
+  # Check if this is hash-based validation (src_hash_validation_tbl and tgt_hash_validation_tbl are provided)
+  if src_hash_validation_tbl and tgt_hash_validation_tbl:
+    # Hash-based validation metrics
+    print("Capturing metrics for hash-based validation...")
+    metrics['src_records'] = spark.sql(f'select count(*) as src_records from {src_hash_validation_tbl}').collect()[0]["src_records"]
+    metrics['tgt_records'] = spark.sql(f'select count(*) as tgt_records from {tgt_hash_validation_tbl}').collect()[0]["tgt_records"]
+    
+    # Use hash anomalies table for hash-based validation
+    hash_anomalies_table_name = f"{validation_data_db}.{workflow_name}___{table_family.replace('.', '_')}__hash_anomalies"
+    metrics['src_extras'] = spark.sql(f'select count(comparison_type) as src_extras from {hash_anomalies_table_name} where iteration_name ="{iteration_name}" and comparison_type= "src_extras"').collect()[0]["src_extras"]
+    metrics['tgt_extras'] = spark.sql(f'select count(comparison_type) as tgt_extras from {hash_anomalies_table_name} where iteration_name ="{iteration_name}" and comparison_type= "tgt_extras"').collect()[0]["tgt_extras"]
+    metrics['mismatches'] = spark.sql(f'select count(comparison_type) as mismatches from {hash_anomalies_table_name} where iteration_name ="{iteration_name}" and comparison_type= "mismatches"').collect()[0]["mismatches"]
+    metrics['matches'] = spark.sql(f'select count(comparison_type) as matches from {hash_anomalies_table_name} where iteration_name ="{iteration_name}" and comparison_type= "matches"').collect()[0]["matches"]
+    
+    metrics['src_delta_table_size'] = spark.sql(f"""describe detail {src_hash_validation_tbl}""").select("sizeInBytes").collect()[0]["sizeInBytes"]
+    metrics['tgt_delta_table_size'] = spark.sql(f"""describe detail {tgt_hash_validation_tbl}""").select("sizeInBytes").collect()[0]["sizeInBytes"]
+    metrics['hash_src_records'] = metrics['src_records']
+    metrics['hash_tgt_records'] = metrics['tgt_records']
+    metrics['hash_mismatches'] = metrics['mismatches']
+    metrics['hash_src_extras'] = metrics['src_extras']
+    metrics['hash_tgt_extras'] = metrics['tgt_extras']
+    metrics['hash_matches'] = metrics['matches']
+    metrics['hash_src_delta_table_size'] = metrics['src_delta_table_size']
+    metrics['hash_tgt_delta_table_size'] = metrics['tgt_delta_table_size']
+  else:
+    # Primary key validation metrics (original logic)
+    print("Capturing metrics for primary key validation...")
+    metrics['src_records'] = spark.sql(f'select total_record_count src_records from {PRIMARY_KEY_VALIDATION} where iteration_name ="{iteration_name}" and lower(table_family) = lower("{table_family}") and table_name = "{src_tbl}"').collect()[0]["src_records"]
+    metrics['tgt_records'] = spark.sql(f'select total_record_count tgt_records from {PRIMARY_KEY_VALIDATION} where iteration_name ="{iteration_name}" and lower(table_family) = lower("{table_family}") and table_name = "{tgt_tbl}"').collect()[0]["tgt_records"]
+    metrics['src_extras'] = spark.sql(f'select count(type) src_extras from {anomalies_table_name} where iteration_name ="{iteration_name}" and type= "src_extras"').collect()[0]["src_extras"]
+    metrics['tgt_extras'] = spark.sql(f'select count(type) tgt_extras from {anomalies_table_name} where iteration_name ="{iteration_name}" and type= "tgt_extras"').collect()[0]["tgt_extras"]
+    metrics['mismatches'] = spark.sql(f'select count(type) mismatches from {anomalies_table_name} where iteration_name ="{iteration_name}" and type= "src_mismatches"').collect()[0]["mismatches"]
+    metrics['matches'] = metrics['src_records'] - metrics['mismatches'] - metrics['src_extras'] 
+    metrics['src_delta_table_size'] = spark.sql(f"""describe detail {src_validation_tbl}""").select("sizeInBytes").collect()[0]["sizeInBytes"]
+    metrics['tgt_delta_table_size'] = spark.sql(f"""describe detail {tgt_validation_tbl}""").select("sizeInBytes").collect()[0]["sizeInBytes"]
+    metrics['hash_src_records'] = "NULL"
+    metrics['hash_tgt_records'] = "NULL"
   metrics['hash_mismatches'] = "NULL"
   metrics['hash_src_extras'] = "NULL"
   metrics['hash_tgt_extras'] = "NULL"
