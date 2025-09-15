@@ -1820,61 +1820,130 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name):
     Returns:
         Validation results
     """
-    print(f"Running hash-based validation for {table_mapping.table_family}")
+    # Extract variables for logging
+    workflow_name = table_mapping.workflow_name
+    table_family = table_mapping.table_family
+    src_warehouse = table_mapping.src_warehouse
+    src_table = table_mapping.src_table
+    tgt_warehouse = table_mapping.tgt_warehouse
+    tgt_table = table_mapping.tgt_table
+    streamlit_user_name = table_mapping.streamlit_user_name
+    streamlit_user_email = table_mapping.streamlit_user_email
+    validation_log_table = VALIDATION_LOG_TABLE
     
-    # 1. Get table columns
-    src_columns = spark.sql(f"show columns from {table_mapping.src_table}").filter(~col("col_name").isin("run_timestamp__mmp", "iteration_name__mmp")).collect()
-    tgt_columns = spark.sql(f"show columns from {table_mapping.tgt_table}").filter(~col("col_name").isin("run_timestamp__mmp", "iteration_name__mmp")).collect()
+    # Define log update function for hash-based validation
+    def log_update(status):
+        spark.sql(f"""
+        UPDATE {validation_log_table}
+          SET
+          validation_run_status = '{status}',
+          validation_run_end_time = now()
+          WHERE iteration_name = '{iteration_name}'
+          AND workflow_name ='{workflow_name}'
+          AND src_warehouse = '{src_warehouse}' 
+          AND src_table = '{src_table}'
+          AND tgt_warehouse = '{tgt_warehouse}'
+          AND tgt_table = '{tgt_table}'
+          AND table_family = '{table_family}'""")
     
-    # 2. Create row hash validation tables
-    src_hash_table, src_hash_sql = create_row_hash_validation_table(
-        table_mapping.src_table, 
-        [col['col_name'] for col in src_columns],
-        table_mapping.mismatch_exclude_fields,
-        table_mapping.validation_data_db,
-        table_mapping.workflow_name,
-        table_mapping.table_family,
-        run_timestamp,
-        iteration_name
-    )
-    
-    tgt_hash_table, tgt_hash_sql = create_row_hash_validation_table(
-        table_mapping.tgt_table,
-        [col['col_name'] for col in tgt_columns],
-        table_mapping.mismatch_exclude_fields,
-        table_mapping.validation_data_db,
-        table_mapping.workflow_name,
-        table_mapping.table_family,
-        run_timestamp,
-        iteration_name
-    )
-    
-    # Execute hash table creation
-    print(f"Creating source hash table: {src_hash_table}")
-    spark.sql(src_hash_sql)
-    print(f"Creating target hash table: {tgt_hash_table}")
-    spark.sql(tgt_hash_sql)
-    
-    # For hash-based validation, we always use quick validation since full validation
-    # (with column-level comparisons) is designed for primary key-based validation
-    print("Running hash-based validation (always quick validation)...")
-    anomalies = getHashAnomaliesNoPK(
-        src_hash_table, tgt_hash_table, 
-        table_mapping.workflow_name, table_mapping.table_family,
-        run_timestamp, iteration_name
-    )
-    
-    # Save hash anomalies to dedicated table
-    hash_anomalies_table_name = f"{table_mapping.validation_data_db}.{table_mapping.workflow_name}___{table_mapping.table_family.replace('.', '_')}__hash_anomalies"
-    anomalies.write.mode("append").saveAsTable(hash_anomalies_table_name)
-    
-    return {
-        'src_hash_table': src_hash_table,
-        'tgt_hash_table': tgt_hash_table,
-        'anomalies': anomalies,
-        'hash_anomalies_table': hash_anomalies_table_name,
-        'validation_strategy': 'hash_based'
-    }
+    try:
+        print(f"Running hash-based validation for {table_family}")
+        print(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
+        
+        # Insert initial validation log entry
+        spark.sql(f"INSERT INTO {validation_log_table} (workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ('{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
+        
+        log_update("HASH_VALIDATION_INITIATED")
+        
+        # 1. Get table columns
+        log_update("HASH_SCHEMA_INITIATED")
+        src_columns = spark.sql(f"show columns from {table_mapping.src_table}").filter(~col("col_name").isin("run_timestamp__mmp", "iteration_name__mmp")).collect()
+        tgt_columns = spark.sql(f"show columns from {table_mapping.tgt_table}").filter(~col("col_name").isin("run_timestamp__mmp", "iteration_name__mmp")).collect()
+        log_update("HASH_SCHEMA_COMPLETED")
+        
+        # 2. Create row hash validation tables
+        log_update("HASH_TABLE_CREATION_INITIATED")
+        src_hash_table, src_hash_sql = create_row_hash_validation_table(
+            table_mapping.src_table, 
+            [col['col_name'] for col in src_columns],
+            table_mapping.mismatch_exclude_fields,
+            table_mapping.validation_data_db,
+            table_mapping.workflow_name,
+            table_mapping.table_family,
+            run_timestamp,
+            iteration_name
+        )
+        
+        tgt_hash_table, tgt_hash_sql = create_row_hash_validation_table(
+            table_mapping.tgt_table,
+            [col['col_name'] for col in tgt_columns],
+            table_mapping.mismatch_exclude_fields,
+            table_mapping.validation_data_db,
+            table_mapping.workflow_name,
+            table_mapping.table_family,
+            run_timestamp,
+            iteration_name
+        )
+        
+        # Execute hash table creation
+        print(f"Creating source hash table: {src_hash_table}")
+        spark.sql(src_hash_sql)
+        print(f"Creating target hash table: {tgt_hash_table}")
+        spark.sql(tgt_hash_sql)
+        log_update("HASH_TABLE_CREATION_COMPLETED")
+        
+        # For hash-based validation, we always use quick validation since full validation
+        # (with column-level comparisons) is designed for primary key-based validation
+        log_update("HASH_ANOMALIES_INITIATED")
+        print("Running hash-based validation (always quick validation)...")
+        anomalies = getHashAnomaliesNoPK(
+            src_hash_table, tgt_hash_table, 
+            table_mapping.workflow_name, table_mapping.table_family,
+            run_timestamp, iteration_name
+        )
+        
+        # Save hash anomalies to dedicated table
+        hash_anomalies_table_name = f"{table_mapping.validation_data_db}.{table_mapping.workflow_name}___{table_mapping.table_family.replace('.', '_')}__hash_anomalies"
+        anomalies.write.mode("append").saveAsTable(hash_anomalies_table_name)
+        log_update("HASH_ANOMALIES_COMPLETED")
+        
+        # Generate validation summary for hash-based validation
+        log_update("HASH_SUMMARY_INITIATED")
+        print("Generating validation summary for hash-based validation...")
+        table_metrics = capture_metrics(iteration_name, table_mapping, None, None, src_hash_table, tgt_hash_table)
+        runner(table_metrics)
+        print(f"Completed Validation Summary for Hash-based Workflow: {table_mapping.workflow_name}; Table Family: {table_mapping.table_family}")
+        log_update("HASH_SUMMARY_COMPLETED")
+        
+        log_update("SUCCESS")
+        print(f"Completed Hash-based Validation Run for Workflow: {workflow_name}; Table Family: {table_family}")
+        
+        return {
+            'src_hash_table': src_hash_table,
+            'tgt_hash_table': tgt_hash_table,
+            'anomalies': anomalies,
+            'hash_anomalies_table': hash_anomalies_table_name,
+            'validation_strategy': 'hash_based'
+        }
+        
+    except Exception as exc:
+        print(f'Catch inside run_hash_based_validation: {exc}')
+        exc = str(exc).replace("'", "\\'")
+        spark.sql(f"""
+        UPDATE {validation_log_table}
+          SET
+          validation_run_status = 'FAILED',
+          validation_run_end_time = now(),
+          exception = '{exc}'
+          WHERE iteration_name = '{iteration_name}'
+          AND workflow_name ='{workflow_name}'
+          AND src_warehouse = '{src_warehouse}' 
+          AND src_table = '{src_table}'
+          AND tgt_warehouse = '{tgt_warehouse}'
+          AND tgt_table = '{tgt_table}'
+          AND table_family = '{table_family}'""")
+        
+        raise exc
 
 # COMMAND ----------
 
