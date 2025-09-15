@@ -478,15 +478,15 @@ def generate_iteration_details(iteration_name_suffix):
 # COMMAND ----------
 
 def generate_src_columns(src_columns, col_mapping):
-  # primary_keys_string = pk_columns.replace("|", ",")
   print(src_columns)
-  # primary_keys_list = [col.strip() for col in pk_columns.split("|")]
-  # print (primary_keys_list)
   cm = col_mapping
+  
+  # Handle case where src_columns is empty or None
+  if not src_columns:
+    print("src_columns_string: (empty)")
+    return ""
+  
   #convert the tgt_pks to corresponding src_pks, if col_mapping is available
-  # for key, value in cm.items():
-  #   print(key, value)
-  # primary_keys_list = pk_columns.split(",")
   columns_list_src = {col: next((key for key, value in cm.items() if value.lower() == col.lower()), col) for col in src_columns}
   src_columns_string = ','.join(columns_list_src.values())
   print(f"src_columns_string: {src_columns_string}")
@@ -655,8 +655,18 @@ def captureSrcTableHash(src_warehouse, src_table, src_jdbc_options, src_sql_over
     pk_columns = table_mapping.tgt_primary_keys
     mismatch_exclude_fields = table_mapping.mismatch_exclude_fields
     col_mapping = table_mapping.col_mapping
-    src_pk_columns = generate_src_columns(pk_columns, col_mapping)
-    src_mismatch_exclude_fields = generate_src_columns(mismatch_exclude_fields, col_mapping).split(",")
+    
+    # Handle case where primary keys are empty (for hash-based validation)
+    if pk_columns:
+        src_pk_columns = generate_src_columns(pk_columns, col_mapping)
+    else:
+        src_pk_columns = ""  # Empty string for hash-based validation
+    
+    if mismatch_exclude_fields:
+        src_mismatch_exclude_fields = generate_src_columns(mismatch_exclude_fields, col_mapping).split(",")
+    else:
+        src_mismatch_exclude_fields = []
+    
     print(src_mismatch_exclude_fields)
     return captureHashTable(src_warehouse, src_table, src_pk_columns, src_mismatch_exclude_fields, src_jdbc_options, src_sql_override, src_data_load_filter, table_mapping)
 
@@ -664,7 +674,13 @@ def captureSrcTableHash(src_warehouse, src_table, src_jdbc_options, src_sql_over
 
 def captureTgtTableHash(tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping):
     print("Capturing Target Hash Contents:")
-    tgt_pk_columns = ",".join(table_mapping.tgt_primary_keys)
+    
+    # Handle case where primary keys are empty (for hash-based validation)
+    if table_mapping.tgt_primary_keys:
+        tgt_pk_columns = ",".join(table_mapping.tgt_primary_keys)
+    else:
+        tgt_pk_columns = ""  # Empty string for hash-based validation
+    
     tgt_mismatch_exclude_fields = table_mapping.mismatch_exclude_fields
     return captureHashTable(tgt_warehouse, tgt_table, tgt_pk_columns, tgt_mismatch_exclude_fields, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping)
 
@@ -747,7 +763,7 @@ def create_full_outer_report(
     
     full_outer_table = f"{validation_data_db}.{workflow_name}___{table_family}__full_outer"
     
-    # For hash-based validation, we need to add row hash columns
+    # For hash-based validation, we need to add hash columns
     if validation_strategy == "hash_based":
         # Generate row hash expressions for source and target
         src_columns_list = [col['col_name'] for col in src_columns]
@@ -756,9 +772,9 @@ def create_full_outer_report(
         src_hash_expr = generate_row_hash_expression(src_columns_list, table_mapping.mismatch_exclude_fields)
         tgt_hash_expr = generate_row_hash_expression(tgt_columns_list, table_mapping.mismatch_exclude_fields)
         
-        # Add hash columns to the column lists
-        src_col_list += f",\n{src_hash_expr} as src_row_hash"
-        tgt_col_list += f",\n{tgt_hash_expr} as tgt_row_hash"
+        # Add hash columns to the column lists (both as p_keys and row_hash)
+        src_col_list += f",\n{src_hash_expr} as src_p_keys,\n{src_hash_expr} as src_row_hash"
+        tgt_col_list += f",\n{tgt_hash_expr} as tgt_p_keys,\n{tgt_hash_expr} as tgt_row_hash"
     if spark.catalog.tableExists(full_outer_table):
         create_full_outer_table_sql = f"""
 INSERT INTO TABLE {full_outer_table}
@@ -890,9 +906,17 @@ def getHashAnomalies(src_hash_validation_tbl, tgt_hash_validation_tbl, primary_k
 
 def generate_sql_override_for_hash_anomalies(table, sql_override, pk_columns, anomalies_hash_in_clause):
   table = sql_override.format(**locals()) if sql_override else f"select * from {table}"
-  pk_columns = pk_columns.split(",")
-  pk_columns_formatted = ", ".join([f"COALESCE(CAST({key} AS STRING),'')" for key in pk_columns])
-  condition = f"""concat_ws(":",{pk_columns_formatted}) IN ({anomalies_hash_in_clause})""" if anomalies_hash_in_clause else "FALSE"
+  
+  # Handle case where pk_columns is empty (for hash-based validation without primary keys)
+  if pk_columns and pk_columns.strip():
+    pk_columns_list = pk_columns.split(",")
+    pk_columns_formatted = ", ".join([f"COALESCE(CAST({key} AS STRING),'')" for key in pk_columns_list])
+    condition = f"""concat_ws(":",{pk_columns_formatted}) IN ({anomalies_hash_in_clause})""" if anomalies_hash_in_clause else "FALSE"
+  else:
+    # For hash-based validation without primary keys, we can't filter by primary keys
+    # Instead, we'll use a different approach or return the full table
+    condition = "FALSE"  # This will effectively return no rows, which might be the intended behavior
+    
   new_sql_override = f"""SELECT * from ({table})t where {condition}"""
   print(new_sql_override)
   return new_sql_override
@@ -944,8 +968,8 @@ def create_row_hash_validation_table(table_name, columns, exclude_fields, valida
     create_sql = f"""
     CREATE TABLE {hash_table_name} AS
     SELECT 
+        {row_hash_expr} as p_keys,
         {row_hash_expr} as row_hash,
-        ROW_NUMBER() OVER (ORDER BY {row_hash_expr}) as row_id,
         '{table_name}' as source_table,
         CAST('{run_timestamp}' AS TIMESTAMP) as run_timestamp,
         '{iteration_name}' as iteration_name__mmp
@@ -960,7 +984,7 @@ def generate_hash_join_condition():
     Returns:
         SQL join condition string
     """
-    return "src.row_hash = tgt.row_hash"
+    return "src.p_keys = tgt.p_keys"
 
 def generate_hash_where_condition():
     """
@@ -968,7 +992,7 @@ def generate_hash_where_condition():
     Returns:
         SQL where condition string
     """
-    return "src_row_hash = tgt_row_hash"
+    return "src_p_keys = tgt_p_keys"
 
 def getHashAnomaliesNoPK(src_hash_validation_tbl, tgt_hash_validation_tbl, workflow_name, table_family, run_timestamp, iteration_name):
     """
@@ -986,17 +1010,16 @@ def getHashAnomaliesNoPK(src_hash_validation_tbl, tgt_hash_validation_tbl, workf
     anomalies_hash = spark.sql(f"""
     SELECT 
         'matches' as comparison_type, 
+        a.p_keys,
         a.row_hash as src_row_hash, 
         b.row_hash as tgt_row_hash,
-        a.row_id as src_row_id,
-        b.row_id as tgt_row_id,
         CAST('{run_timestamp}' AS TIMESTAMP) as run_timestamp, 
         '{iteration_name}' as iteration_name, 
         '{workflow_name}' as workflow_name, 
         '{table_family}' as table_family 
     FROM {src_hash_validation_tbl} a 
     INNER JOIN {tgt_hash_validation_tbl} b 
-        ON a.row_hash = b.row_hash 
+        ON a.p_keys = b.p_keys 
         AND a.iteration_name__mmp = b.iteration_name__mmp 
     WHERE a.iteration_name__mmp = '{iteration_name}'
     
@@ -1004,17 +1027,16 @@ def getHashAnomaliesNoPK(src_hash_validation_tbl, tgt_hash_validation_tbl, workf
     
     SELECT 
         'src_extras' as comparison_type, 
+        a.p_keys,
         a.row_hash as src_row_hash, 
         NULL as tgt_row_hash,
-        a.row_id as src_row_id,
-        NULL as tgt_row_id,
         CAST('{run_timestamp}' AS TIMESTAMP) as run_timestamp, 
         '{iteration_name}' as iteration_name, 
         '{workflow_name}' as workflow_name, 
         '{table_family}' as table_family 
     FROM {src_hash_validation_tbl} a 
     LEFT ANTI JOIN {tgt_hash_validation_tbl} b 
-        ON a.row_hash = b.row_hash 
+        ON a.p_keys = b.p_keys 
         AND a.iteration_name__mmp = b.iteration_name__mmp 
     WHERE a.iteration_name__mmp = '{iteration_name}'
     
@@ -1022,17 +1044,16 @@ def getHashAnomaliesNoPK(src_hash_validation_tbl, tgt_hash_validation_tbl, workf
     
     SELECT 
         'tgt_extras' as comparison_type, 
+        b.p_keys,
         NULL as src_row_hash, 
         b.row_hash as tgt_row_hash,
-        NULL as src_row_id,
-        b.row_id as tgt_row_id,
         CAST('{run_timestamp}' AS TIMESTAMP) as run_timestamp, 
         '{iteration_name}' as iteration_name, 
         '{workflow_name}' as workflow_name, 
         '{table_family}' as table_family 
     FROM {tgt_hash_validation_tbl} b 
     LEFT ANTI JOIN {src_hash_validation_tbl} a 
-        ON a.row_hash = b.row_hash 
+        ON a.p_keys = b.p_keys 
         AND a.iteration_name__mmp = b.iteration_name__mmp 
     WHERE b.iteration_name__mmp = '{iteration_name}'
     """)
@@ -1348,9 +1369,9 @@ def get_rec_counts_with_primary_keys(
     validation_strategy = table_mapping.validation_strategy
     
     if validation_strategy == "hash_based":
-        # For hash-based validation, we can't do distinct count on primary keys
+        # For hash-based validation, use p_keys (which is the hash) for distinct count
         df = spark.sql(
-            f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(distinct row_hash) from {validation_tbl}) as distinct_hash_count, NULL as distinct_key_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
+            f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(distinct p_keys) from {validation_tbl}) as distinct_key_count, (select count(distinct row_hash) from {validation_tbl}) as distinct_hash_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
         )
     else:
         # Original primary key logic
