@@ -1561,10 +1561,10 @@ def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_valid
   metrics['tgt_wrhse'] = table_mapping.tgt_warehouse
   metrics['tgt_tbl'] = tgt_tbl = table_mapping.tgt_table
   metrics['col_mapping'] = table_mapping.pretty_col_mapping
-  metrics['tgt_primary_keys'] = ", ".join(table_mapping.tgt_primary_keys)
+  metrics['tgt_primary_keys'] = ", ".join(table_mapping.tgt_primary_keys) if table_mapping.tgt_primary_keys else ""
   metrics['exclude_fields_from_summary'] = table_mapping.exclude_fields_from_summary
   metrics['date_bucket'] = table_mapping.date_bucket
-  metrics['mismatch_exclude_fields'] = "|".join(table_mapping.mismatch_exclude_fields)
+  metrics['mismatch_exclude_fields'] = "|".join(table_mapping.mismatch_exclude_fields) if table_mapping.mismatch_exclude_fields else ""
   metrics['src_sql_override'] = table_mapping.src_sql_override
   metrics['tgt_sql_override'] = table_mapping.tgt_sql_override
   metrics['src_data_load_filter'] = table_mapping.src_data_load_filter
@@ -1827,8 +1827,7 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name):
     src_table = table_mapping.src_table
     tgt_warehouse = table_mapping.tgt_warehouse
     tgt_table = table_mapping.tgt_table
-    streamlit_user_name = table_mapping.streamlit_user_name
-    streamlit_user_email = table_mapping.streamlit_user_email
+    # Use global variables for streamlit user info (not TableMapping attributes)
     validation_log_table = VALIDATION_LOG_TABLE
     
     # Define log update function for hash-based validation
