@@ -963,7 +963,7 @@ def create_row_hash_validation_table(table_name, columns, exclude_fields, valida
         Tuple of (hash_table_name, create_sql)
     """
     row_hash_expr = generate_row_hash_expression(columns, exclude_fields)
-    hash_table_name = f"{validation_data_db}.{workflow_name}___{table_family}__row_hash_validation"
+    hash_table_name = f"{validation_data_db}.{workflow_name}___{table_family.replace('.', '_')}__row_hash_validation"
     
     create_sql = f"""
     CREATE TABLE {hash_table_name} AS
@@ -1806,62 +1806,6 @@ else :
   workflow_table_families = dbutils.widgets.get("03-workflow:table_family")
   print(workflow_table_families)
 
-# COMMAND ----------
-
-# DBTITLE 0,able 
-from pyspark.sql.functions import lit, to_timestamp
-from concurrent.futures import ThreadPoolExecutor
-from  itertools import repeat
-
-def run_validation_with_strategy(table_mapping, run_timestamp, iteration_name, quick_validation=False):
-    """
-    Main validation orchestrator that chooses strategy based on primary key availability
-    Args:
-        table_mapping: TableMapping object
-        run_timestamp: Run timestamp
-        iteration_name: Iteration name
-        quick_validation: Whether to run quick validation only
-    Returns:
-        Validation results
-    """
-    validation_strategy = table_mapping.validation_strategy
-    
-    if validation_strategy == "hash_based":
-        print(f"Using hash-based validation strategy for {table_mapping.table_family}")
-        return run_hash_based_validation(table_mapping, run_timestamp, iteration_name, quick_validation)
-    else:
-        print(f"Using primary key-based validation strategy for {table_mapping.table_family}")
-        # Use existing validation flow
-        return trigger_validation(table_mapping)
-
-table_config_table = TABLE_CONFIG_TABLE
-validation_log_table = VALIDATION_LOG_TABLE
-
-run_timestamp, iteration_name = generate_iteration_details(iteration_name_suffix)
-# mappings = readValidationTableList(validation_mapping_table, table_families)
-mappings = readValidationTableList(validation_mapping_table, table_config_table, workflow_table_families)
-# table_configs = read_table_config(table_config_table)
-# trigger_validation(mappings[0],table_configs)
-# with ThreadPoolExecutor(max_workers=10) as exe:
-#   exe.map(trigger_validation,mappings,repeat(table_configs))
-
-# with ThreadPoolExecutor(max_workers=10) as exe:
-#   exe.map(trigger_validation,mappings)
-
-with ThreadPoolExecutor(max_workers=PARALLELISM) as exe:
-    try:
-        for r in exe.map(run_validation_with_strategy,mappings,repeat(run_timestamp),repeat(iteration_name)):
-            try:
-                print(r)
-            except Exception as exc:
-                print(f'Catch inside: {exc}')
-    except Exception as exc:
-        print(f'Catch outside: {exc}')
-
-# for table_mapping in mappings:
-#   trigger_validation(table_mapping)
-dbutils.jobs.taskValues.set(key = "iteration_name", value = iteration_name)
-print("Validation Job Run Completed")
 
 # COMMAND ----------
 
@@ -1911,6 +1855,7 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, quic
     print(f"Creating target hash table: {tgt_hash_table}")
     spark.sql(tgt_hash_sql)
     
+    quick_validation = True
     if quick_validation:
         # Quick hash-based validation - just find record count differences and extras
         print("Running quick hash-based validation...")
@@ -1940,3 +1885,64 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, quic
             'anomalies': anomalies,
             'validation_strategy': 'hash_based'
         }
+
+# COMMAND ----------
+
+# DBTITLE 0,able 
+from pyspark.sql.functions import lit, to_timestamp
+from concurrent.futures import ThreadPoolExecutor
+from  itertools import repeat
+
+def run_validation_with_strategy(table_mapping, run_timestamp, iteration_name, quick_validation=False):
+    """
+    Main validation orchestrator that chooses strategy based on primary key availability
+    Args:
+        table_mapping: TableMapping object (or Row object that can be converted)
+        run_timestamp: Run timestamp
+        iteration_name: Iteration name
+        quick_validation: Whether to run quick validation only
+    Returns:
+        Validation results
+    """
+    # Convert to proper TableMapping object if needed (same as trigger_validation does)
+    table_mapping_dict = table_mapping.asDict()
+    table_mapping = TableMapping(**table_mapping_dict)
+    
+    validation_strategy = table_mapping.validation_strategy
+    
+    if validation_strategy == "hash_based":
+        print(f"Using hash-based validation strategy for {table_mapping.table_family}")
+        return run_hash_based_validation(table_mapping, run_timestamp, iteration_name, quick_validation)
+    else:
+        print(f"Using primary key-based validation strategy for {table_mapping.table_family}")
+        # Use existing validation flow
+        return trigger_validation(table_mapping)
+
+table_config_table = TABLE_CONFIG_TABLE
+validation_log_table = VALIDATION_LOG_TABLE
+
+run_timestamp, iteration_name = generate_iteration_details(iteration_name_suffix)
+# mappings = readValidationTableList(validation_mapping_table, table_families)
+mappings = readValidationTableList(validation_mapping_table, table_config_table, workflow_table_families)
+# table_configs = read_table_config(table_config_table)
+# trigger_validation(mappings[0],table_configs)
+# with ThreadPoolExecutor(max_workers=10) as exe:
+#   exe.map(trigger_validation,mappings,repeat(table_configs))
+
+# with ThreadPoolExecutor(max_workers=10) as exe:
+#   exe.map(trigger_validation,mappings)
+
+with ThreadPoolExecutor(max_workers=PARALLELISM) as exe:
+    try:
+        for r in exe.map(run_validation_with_strategy,mappings,repeat(run_timestamp),repeat(iteration_name)):
+            try:
+                print(r)
+            except Exception as exc:
+                print(f'Catch inside: {exc}')
+    except Exception as exc:
+        print(f'Catch outside: {exc}')
+
+# for table_mapping in mappings:
+#   trigger_validation(table_mapping)
+dbutils.jobs.taskValues.set(key = "iteration_name", value = iteration_name)
+print("Validation Job Run Completed")
