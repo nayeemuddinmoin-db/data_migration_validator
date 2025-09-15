@@ -136,23 +136,31 @@ def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fiel
   if path is None:
     if primary_keys_string and primary_keys_string.strip():
       p_keys_expr = f'concat_ws(":",{primary_keys_string}) as p_keys'
+      row_hash_expr = f'sha2(concat_ws(":",{col_list}),256) as row_hash'
     else:
       # For hash-based validation without primary keys, use the hash itself as the unique identifier
-      p_keys_expr = f'sha2(concat_ws(":",{col_list}),256) as p_keys'
+      # Use the same hash for both p_keys and row_hash
+      hash_expr = f'sha2(concat_ws(":",{col_list}),256)'
+      p_keys_expr = f'{hash_expr} as p_keys'
+      row_hash_expr = f'{hash_expr} as row_hash'
     
-    sql = f"""SELECT {p_keys_expr}, sha2(concat_ws(":",{col_list}),256) as row_hash from (SELECT {col_cast_list} from {read_sql_compiled})c"""
+    sql = f"""SELECT {p_keys_expr}, {row_hash_expr} from (SELECT {col_cast_list} from {read_sql_compiled})c"""
     print(sql)
     df = spark.sql(sql)
   else:
     if primary_keys_string and primary_keys_string.strip():
       p_keys_expr = f'concat_ws(":", {primary_keys_string}) as p_keys'
+      row_hash_expr = f'sha2(concat_ws(":", {col_list}), 256) as row_hash'
     else:
       # For hash-based validation without primary keys, use the hash itself as the unique identifier
-      p_keys_expr = f'sha2(concat_ws(":", {col_list}), 256) as p_keys'
+      # Use the same hash for both p_keys and row_hash
+      hash_expr = f'sha2(concat_ws(":", {col_list}), 256)'
+      p_keys_expr = f'{hash_expr} as p_keys'
+      row_hash_expr = f'{hash_expr} as row_hash'
     
     df = read_sql_compiled.select(col_cast_list).selectExpr(
     p_keys_expr,
-    f'sha2(concat_ws(":", {col_list}), 256) as row_hash'
+    row_hash_expr
     )
   
   df.show()
