@@ -1809,14 +1809,14 @@ else :
 
 # COMMAND ----------
 
-def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, quick_validation=False):
+def run_hash_based_validation(table_mapping, run_timestamp, iteration_name):
     """
     Hash-based validation flow for tables without primary keys
+    Always runs quick validation since full validation is designed for primary key-based validation
     Args:
         table_mapping: TableMapping object
         run_timestamp: Run timestamp
         iteration_name: Iteration name
-        quick_validation: Whether to run quick validation only
     Returns:
         Validation results
     """
@@ -1855,36 +1855,26 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, quic
     print(f"Creating target hash table: {tgt_hash_table}")
     spark.sql(tgt_hash_sql)
     
-    quick_validation = True
-    if quick_validation:
-        # Quick hash-based validation - just find record count differences and extras
-        print("Running quick hash-based validation...")
-        anomalies = getHashAnomaliesNoPK(
-            src_hash_table, tgt_hash_table, 
-            table_mapping.workflow_name, table_mapping.table_family,
-            run_timestamp, iteration_name
-        )
-        
-        # Save anomalies to table
-        anomalies_table_name = f"{table_mapping.validation_data_db}.{table_mapping.workflow_name}___{table_mapping.table_family}__anomalies"
-        anomalies.write.mode("append").saveAsTable(anomalies_table_name)
-        
-        return anomalies
-    else:
-        # Full hash-based validation with full outer join
-        print("Running full hash-based validation...")
-        
-        # For hash-based validation, we don't need a full outer report
-        # The hash validation tables already contain the necessary information
-        print("Hash-based validation completed. Skipping full outer report creation.")
-        
-        # Return the hash validation results
-        return {
-            'src_hash_table': src_hash_table,
-            'tgt_hash_table': tgt_hash_table,
-            'anomalies': anomalies,
-            'validation_strategy': 'hash_based'
-        }
+    # For hash-based validation, we always use quick validation since full validation
+    # (with column-level comparisons) is designed for primary key-based validation
+    print("Running hash-based validation (always quick validation)...")
+    anomalies = getHashAnomaliesNoPK(
+        src_hash_table, tgt_hash_table, 
+        table_mapping.workflow_name, table_mapping.table_family,
+        run_timestamp, iteration_name
+    )
+    
+    # Save hash anomalies to dedicated table
+    hash_anomalies_table_name = f"{table_mapping.validation_data_db}.{table_mapping.workflow_name}___{table_mapping.table_family.replace('.', '_')}__hash_anomalies"
+    anomalies.write.mode("append").saveAsTable(hash_anomalies_table_name)
+    
+    return {
+        'src_hash_table': src_hash_table,
+        'tgt_hash_table': tgt_hash_table,
+        'anomalies': anomalies,
+        'hash_anomalies_table': hash_anomalies_table_name,
+        'validation_strategy': 'hash_based'
+    }
 
 # COMMAND ----------
 
@@ -1912,7 +1902,7 @@ def run_validation_with_strategy(table_mapping, run_timestamp, iteration_name, q
     
     if validation_strategy == "hash_based":
         print(f"Using hash-based validation strategy for {table_mapping.table_family}")
-        return run_hash_based_validation(table_mapping, run_timestamp, iteration_name, quick_validation)
+        return run_hash_based_validation(table_mapping, run_timestamp, iteration_name)
     else:
         print(f"Using primary key-based validation strategy for {table_mapping.table_family}")
         # Use existing validation flow
