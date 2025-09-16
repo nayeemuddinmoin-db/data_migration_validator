@@ -9,7 +9,11 @@
 # COMMAND ----------
 
 PARALLELISM = 30
-INGESTION_METADATA_TABLE = "cat_ril_nayeem_01.rildb01.source_file_metadata"
+# INGESTION_METADATA_TABLE = "cat_ril_nayeem_01.rildb01.source_file_metadata"
+INGESTION_METADATA_TABLE = "ts42_demo.migration_operations.serving_ingestion_metadata"
+INGESTION_AUDIT_TABLE = "ts42_demo.migration_operations.serving_ingestion_audit"
+INGESTION_CONFIG_TABLE = "ts42_demo.migration_operations.serving_ingestion_config"
+INGESTION_SRC_TABLE_PARTITION_MAPPING= "ts42_demo.migration_operations.source_table_partition_mapping"
 
 VALIDATION_SYSTEM_DB = "cat_ril_nayeem_02.dmvdbpath_system"
 VALIDATION_METRICS_DB = "cat_ril_nayeem_02.dmvdbpath_system_metrics"
