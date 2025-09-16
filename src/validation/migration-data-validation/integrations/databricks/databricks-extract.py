@@ -158,18 +158,8 @@ def processDatabricksColNames(table, col_mapping, primary_keys_string, mismatch_
 
 def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fields, sql_override, data_load_filter, table_mapping, path=None, src_path_part_params=None):
 
-
-
   col_mapping = table_mapping.col_mapping
-  # mismatch_exclude_fields_string = table_mapping.mismatch_exclude_fields
   cm = col_mapping
-  # primary_keys_list = table_mapping.tgt_primary_keys
-  # primary_keys_string = pk_columns.replace("|", ",")
-  # primary_keys_list = [col.strip() for col in pk_columns.split("|")]
-  # print (primary_keys_list)
-
-  # primary_keys_string = ', '.join(primary_keys_list)
-
   load_filter = data_load_filter if (not data_load_filter is None) else "1=1"
 
   if path is None:
@@ -194,16 +184,35 @@ def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fiel
 
   col_list, col_cast_list = processDatabricksColNames(read_sql_compiled, col_mapping, primary_keys_string, mismatch_exclude_fields, path)
 
-  #one with concatenated values for debugging
-  # sql = f"""SELECT concat_ws(":",{primary_keys_string}) as p_keys, sha2(concat_ws(":",{col_list}),256) as row_hash, concat_ws(":",{col_list}) as val from (SELECT {col_cast_list} from {read_sql_compiled})c"""
+  # Handle case where primary_keys_string is empty (for hash-based validation)
   if path is None:
-    sql = f"""SELECT concat_ws(":",{primary_keys_string}) as p_keys, sha2(concat_ws(":",{col_list}),256) as row_hash from (SELECT {col_cast_list} from {read_sql_compiled})c"""
+    if primary_keys_string and primary_keys_string.strip():
+      p_keys_expr = f'concat_ws(":",{primary_keys_string}) as p_keys'
+      row_hash_expr = f'sha2(concat_ws(":",{col_list}),256) as row_hash'
+    else:
+      # For hash-based validation without primary keys, use the hash itself as the unique identifier
+      # Use the same hash for both p_keys and row_hash
+      hash_expr = f'sha2(concat_ws(":",{col_list}),256)'
+      p_keys_expr = f'{hash_expr} as p_keys'
+      row_hash_expr = f'{hash_expr} as row_hash'
+    
+    sql = f"""SELECT {p_keys_expr}, {row_hash_expr} from (SELECT {col_cast_list} from {read_sql_compiled})c"""
     print(sql)
     df = spark.sql(sql)
   else:
+    if primary_keys_string and primary_keys_string.strip():
+      p_keys_expr = f'concat_ws(":", {primary_keys_string}) as p_keys'
+      row_hash_expr = f'sha2(concat_ws(":", {col_list}), 256) as row_hash'
+    else:
+      # For hash-based validation without primary keys, use the hash itself as the unique identifier
+      # Use the same hash for both p_keys and row_hash
+      hash_expr = f'sha2(concat_ws(":", {col_list}), 256)'
+      p_keys_expr = f'{hash_expr} as p_keys'
+      row_hash_expr = f'{hash_expr} as row_hash'
+    
     df = read_sql_compiled.select(col_cast_list).selectExpr(
-    f'concat_ws(":", {primary_keys_string}) as p_keys',
-    f'sha2(concat_ws(":", {col_list}), 256) as row_hash'
+    p_keys_expr,
+    row_hash_expr
     )
   
   df.show()

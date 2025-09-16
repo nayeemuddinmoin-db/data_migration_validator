@@ -124,7 +124,7 @@ if(not triggered_from_workflow):
 
 # COMMAND ----------
 
-# %run "./integrations/hive/hive-extract"
+#%run "./integrations/hive/hive-extract"
 
 # COMMAND ----------
 
@@ -281,7 +281,18 @@ class TableMapping:
     def tgt_primary_keys(self):
         if self._tgt_primary_keys:
             _primary_keys_list = [col.strip() for col in self._tgt_primary_keys.split("|")]
-        return _primary_keys_list
+            return _primary_keys_list
+        return []  # Return empty list when no primary keys are defined
+    
+    @property
+    def has_primary_keys(self):
+        """Check if primary keys are defined"""
+        return bool(self._tgt_primary_keys and self._tgt_primary_keys.strip())
+    
+    @property
+    def validation_strategy(self):
+        """Determine validation strategy based on primary key availability"""
+        return "primary_key_based" if self.has_primary_keys else "hash_based"
 
     @tgt_primary_keys.setter
     def tgt_primary_keys(self, value):    
@@ -484,10 +495,13 @@ def generate_src_columns(src_columns, col_mapping):
   # primary_keys_list = [col.strip() for col in pk_columns.split("|")]
   # print (primary_keys_list)
   cm = col_mapping
+  
+  # Handle case where src_columns is empty or None
+  if not src_columns:
+    print("src_columns_string: (empty)")
+    return ""
+  
   #convert the tgt_pks to corresponding src_pks, if col_mapping is available
-  # for key, value in cm.items():
-  #   print(key, value)
-  # primary_keys_list = pk_columns.split(",")
   columns_list_src = {col: next((key for key, value in cm.items() if value.lower() == col.lower()), col) for col in src_columns}
   src_columns_string = ','.join(columns_list_src.values())
   logger.info(f"src_columns_string: {src_columns_string}")
@@ -657,20 +671,36 @@ def captureTgtSchema(tgt_warehouse, tgt_table, tgt_jdbc_options, table_mapping):
 # COMMAND ----------
 
 def captureSrcTableHash(src_warehouse, src_table, src_jdbc_options, src_sql_override, src_data_load_filter, table_mapping, src_path,src_path_part_params):
-    logger.info("Capturing Source Hash Contents:")
+    print("Capturing Source Hash Contents:")
     pk_columns = table_mapping.tgt_primary_keys
     mismatch_exclude_fields = table_mapping.mismatch_exclude_fields
     col_mapping = table_mapping.col_mapping
-    src_pk_columns = generate_src_columns(pk_columns, col_mapping)
-    src_mismatch_exclude_fields = generate_src_columns(mismatch_exclude_fields, col_mapping).split(",")
-    logger.info(f"src_mismatch_exclude_fields: {src_mismatch_exclude_fields}")
+    
+    # Handle case where primary keys are empty (for hash-based validation)
+    if pk_columns:
+        src_pk_columns = generate_src_columns(pk_columns, col_mapping)
+    else:
+        src_pk_columns = ""  # Empty string for hash-based validation
+    
+    if mismatch_exclude_fields:
+        src_mismatch_exclude_fields = generate_src_columns(mismatch_exclude_fields, col_mapping).split(",")
+    else:
+        src_mismatch_exclude_fields = []
+    
+   logger.info(f"src_mismatch_exclude_fields: {src_mismatch_exclude_fields}")
     return captureHashTable(src_warehouse, src_table, src_pk_columns, src_mismatch_exclude_fields, src_jdbc_options, src_sql_override, src_data_load_filter, table_mapping, src_path, src_path_part_params)
 
 # COMMAND ----------
 
 def captureTgtTableHash(tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping):
-    logger.info("Capturing Target Hash Contents:")
-    tgt_pk_columns = ",".join(table_mapping.tgt_primary_keys)
+    print("Capturing Target Hash Contents:")
+    
+    # Handle case where primary keys are empty (for hash-based validation)
+    if table_mapping.tgt_primary_keys:
+        tgt_pk_columns = ",".join(table_mapping.tgt_primary_keys)
+    else:
+        tgt_pk_columns = ""  # Empty string for hash-based validation
+    
     tgt_mismatch_exclude_fields = table_mapping.mismatch_exclude_fields
     return captureHashTable(tgt_warehouse, tgt_table, tgt_pk_columns, tgt_mismatch_exclude_fields, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping)
 
@@ -707,7 +737,20 @@ def generate_col_list(suffix, columns):
 import json
 
 
-def generate_join_condition(primary_keys, col_mapping):
+def generate_join_condition(primary_keys, col_mapping, validation_strategy="primary_key_based"):
+    """
+    Generate join condition supporting both primary key and hash-based strategies
+    Args:
+        primary_keys: List of primary key columns
+        col_mapping: Column mapping dictionary
+        validation_strategy: "primary_key_based" or "hash_based"
+    Returns:
+        SQL join condition string
+    """
+    if validation_strategy == "hash_based" or not primary_keys:
+        return generate_hash_join_condition()
+    
+    # Original primary key logic
     loop = 0
     for key in primary_keys:
         if loop == 0:
@@ -728,11 +771,29 @@ def create_full_outer_report(
     col_mapping = table_mapping.col_mapping
     workflow_name = table_mapping.workflow_name
     table_family = table_mapping.table_family
-    col_mapping = table_mapping.col_mapping
+    validation_strategy = table_mapping.validation_strategy
+    
+    # Generate column lists
     src_col_list = generate_col_list("src", src_columns)
     tgt_col_list = generate_col_list("tgt", tgt_columns)
-    join_condition = generate_join_condition(primary_keys, col_mapping)
+    
+    # Generate join condition based on validation strategy
+    join_condition = generate_join_condition(primary_keys, col_mapping, validation_strategy)
+    
     full_outer_table = f"{validation_data_db}.{workflow_name}___{table_family}__full_outer"
+    
+    # For hash-based validation, we need to add hash columns
+    if validation_strategy == "hash_based":
+        # Generate row hash expressions for source and target
+        src_columns_list = [col['col_name'] for col in src_columns]
+        tgt_columns_list = [col['col_name'] for col in tgt_columns]
+        
+        src_hash_expr = generate_row_hash_expression(src_columns_list, table_mapping.mismatch_exclude_fields)
+        tgt_hash_expr = generate_row_hash_expression(tgt_columns_list, table_mapping.mismatch_exclude_fields)
+        
+        # Add hash columns to the column lists (both as p_keys and row_hash)
+        src_col_list += f",\n{src_hash_expr} as src_p_keys,\n{src_hash_expr} as src_row_hash"
+        tgt_col_list += f",\n{tgt_hash_expr} as tgt_p_keys,\n{tgt_hash_expr} as tgt_row_hash"
     if spark.catalog.tableExists(full_outer_table):
         create_full_outer_table_sql = f"""
 INSERT INTO TABLE {full_outer_table}
@@ -784,7 +845,20 @@ ON
 
 # COMMAND ----------
 
-def generate_where_condition(primary_keys, col_mapping):
+def generate_where_condition(primary_keys, col_mapping, validation_strategy="primary_key_based"):
+    """
+    Generate where condition supporting both primary key and hash-based strategies
+    Args:
+        primary_keys: List of primary key columns
+        col_mapping: Column mapping dictionary
+        validation_strategy: "primary_key_based" or "hash_based"
+    Returns:
+        SQL where condition string
+    """
+    if validation_strategy == "hash_based" or not primary_keys:
+        return generate_hash_where_condition()
+    
+    # Original primary key logic
     loop = 0
     for key in primary_keys:
         if loop == 0:
@@ -853,12 +927,159 @@ def getHashAnomalies(src_hash_validation_tbl, tgt_hash_validation_tbl, primary_k
 
 def generate_sql_override_for_hash_anomalies(table, sql_override, pk_columns, anomalies_hash_in_clause):
   table = sql_override.format(**locals()) if sql_override else f"select * from {table}"
-  pk_columns = pk_columns.split(",")
-  pk_columns_formatted = ", ".join([f"COALESCE(CAST({key} AS STRING),'')" for key in pk_columns])
-  condition = f"""concat_ws(":",{pk_columns_formatted}) IN ({anomalies_hash_in_clause})""" if anomalies_hash_in_clause else "FALSE"
+  
+  # Handle case where pk_columns is empty (for hash-based validation without primary keys)
+  if pk_columns and pk_columns.strip():
+    pk_columns_list = pk_columns.split(",")
+    pk_columns_formatted = ", ".join([f"COALESCE(CAST({key} AS STRING),'')" for key in pk_columns_list])
+    condition = f"""concat_ws(":",{pk_columns_formatted}) IN ({anomalies_hash_in_clause})""" if anomalies_hash_in_clause else "FALSE"
+  else:
+    # For hash-based validation without primary keys, we can't filter by primary keys
+    # Instead, we'll use a different approach or return the full table
+    condition = "FALSE"  # This will effectively return no rows, which might be the intended behavior
+    
   new_sql_override = f"""SELECT * from ({table})t where {condition}"""
 #   print(new_sql_override)
   return new_sql_override
+
+# COMMAND ----------
+
+# Row-Level Hashing Functions for Tables Without Primary Keys
+
+def generate_row_hash_expression(columns, exclude_fields=None):
+    """
+    Generate SQL expression to create row hash from all columns
+    Args:
+        columns: List of column names
+        exclude_fields: List of fields to exclude from hashing
+    Returns:
+        SQL expression for row hash
+    """
+    if exclude_fields is None:
+        exclude_fields = []
+    
+    # Filter out excluded fields and metadata columns
+    hash_columns = [col for col in columns 
+                   if col not in exclude_fields 
+                   and col not in ['run_timestamp__mmp', 'iteration_name__mmp']]
+    
+    # Create hash expression using MD5 of concatenated values
+    hash_expr = f"MD5(CONCAT_WS('|', {', '.join([f'COALESCE(CAST({col} AS STRING), \'NULL\')' for col in hash_columns])}))"
+    
+    return hash_expr
+
+def create_row_hash_validation_table(table_name, columns, exclude_fields, validation_data_db, workflow_name, table_family, run_timestamp, iteration_name):
+    """
+    Create validation table with row hashes instead of primary keys
+    Args:
+        table_name: Source table name
+        columns: List of column names
+        exclude_fields: Fields to exclude from hashing
+        validation_data_db: Validation database name
+        workflow_name: Workflow name
+        table_family: Table family name
+        run_timestamp: Run timestamp
+        iteration_name: Iteration name
+    Returns:
+        Tuple of (hash_table_name, create_sql)
+    """
+    row_hash_expr = generate_row_hash_expression(columns, exclude_fields)
+    hash_table_name = f"{validation_data_db}.{workflow_name}___{table_family.replace('.', '_')}__row_hash_validation"
+    
+    create_sql = f"""
+    CREATE OR REPLACE TABLE {hash_table_name} AS
+    SELECT 
+        {row_hash_expr} as p_keys,
+        {row_hash_expr} as row_hash,
+        '{table_name}' as source_table,
+        CAST('{run_timestamp}' AS TIMESTAMP) as run_timestamp,
+        '{iteration_name}' as iteration_name__mmp
+    FROM {table_name}
+    """
+    
+    return hash_table_name, create_sql
+
+def generate_hash_join_condition():
+    """
+    Generate join condition for hash-based comparison
+    Returns:
+        SQL join condition string
+    """
+    return "src.p_keys = tgt.p_keys"
+
+def generate_hash_where_condition():
+    """
+    Generate where condition for hash-based comparison
+    Returns:
+        SQL where condition string
+    """
+    return "src_p_keys = tgt_p_keys"
+
+def getHashAnomaliesNoPK(src_hash_validation_tbl, tgt_hash_validation_tbl, workflow_name, table_family, run_timestamp, iteration_name):
+    """
+    Hash-based anomaly detection for tables without primary keys
+    Args:
+        src_hash_validation_tbl: Source hash validation table
+        tgt_hash_validation_tbl: Target hash validation table
+        workflow_name: Workflow name
+        table_family: Table family name
+        run_timestamp: Run timestamp
+        iteration_name: Iteration name
+    Returns:
+        DataFrame with hash-based anomalies
+    """
+    anomalies_hash = spark.sql(f"""
+    SELECT 
+        'matches' as comparison_type, 
+        a.p_keys,
+        a.row_hash as src_row_hash, 
+        b.row_hash as tgt_row_hash,
+        CAST('{run_timestamp}' AS TIMESTAMP) as run_timestamp, 
+        '{iteration_name}' as iteration_name, 
+        '{workflow_name}' as workflow_name, 
+        '{table_family}' as table_family 
+    FROM {src_hash_validation_tbl} a 
+    INNER JOIN {tgt_hash_validation_tbl} b 
+        ON a.p_keys = b.p_keys 
+        AND a.iteration_name__mmp = b.iteration_name__mmp 
+    WHERE a.iteration_name__mmp = '{iteration_name}'
+    
+    UNION ALL
+    
+    SELECT 
+        'src_extras' as comparison_type, 
+        a.p_keys,
+        a.row_hash as src_row_hash, 
+        NULL as tgt_row_hash,
+        CAST('{run_timestamp}' AS TIMESTAMP) as run_timestamp, 
+        '{iteration_name}' as iteration_name, 
+        '{workflow_name}' as workflow_name, 
+        '{table_family}' as table_family 
+    FROM {src_hash_validation_tbl} a 
+    LEFT ANTI JOIN {tgt_hash_validation_tbl} b 
+        ON a.p_keys = b.p_keys 
+        AND a.iteration_name__mmp = b.iteration_name__mmp 
+    WHERE a.iteration_name__mmp = '{iteration_name}'
+    
+    UNION ALL
+    
+    SELECT 
+        'tgt_extras' as comparison_type, 
+        b.p_keys,
+        NULL as src_row_hash, 
+        b.row_hash as tgt_row_hash,
+        CAST('{run_timestamp}' AS TIMESTAMP) as run_timestamp, 
+        '{iteration_name}' as iteration_name, 
+        '{workflow_name}' as workflow_name, 
+        '{table_family}' as table_family 
+    FROM {tgt_hash_validation_tbl} b 
+    LEFT ANTI JOIN {src_hash_validation_tbl} a 
+        ON a.p_keys = b.p_keys 
+        AND a.iteration_name__mmp = b.iteration_name__mmp 
+    WHERE b.iteration_name__mmp = '{iteration_name}'
+    """)
+    
+    return anomalies_hash
 
 # COMMAND ----------
 
@@ -907,7 +1128,7 @@ def generate_validation_results(
     full_outer_table = create_full_outer_report(
         src_tbl, tgt_tbl, src_columns, tgt_columns, table_mapping
     )
-    where_condition = generate_where_condition(tgt_primary_keys, col_mapping)
+    where_condition = generate_where_condition(tgt_primary_keys, col_mapping, table_mapping.validation_strategy)
 
     capture_mismatches = []
     for addtnl_filter in json.loads(addtnl_filters):
@@ -1056,7 +1277,7 @@ def windowed_validation(
             .toPandas()["col_name"]
         )
     )
-    join_condition = generate_join_condition(tgt_primary_keys, col_mapping)
+    join_condition = generate_join_condition(tgt_primary_keys, col_mapping, table_mapping.validation_strategy)
 
     anomalies_table_name = f"{validation_data_db}.{workflow_name}___{table_family}__anomalies"
 
@@ -1177,12 +1398,43 @@ def windowed_validation(
 def get_rec_counts_with_primary_keys(
     table_mapping, table, validation_tbl, run_timestamp, iteration_name
 ):
+    """
+    Enhanced record count function supporting both primary key and hash-based strategies
+    """
     workflow_name = table_mapping.workflow_name
     table_family = table_mapping.table_family
-    primary_keys = ", ".join(table_mapping.tgt_primary_keys)
-    df = spark.sql(
-        f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(distinct {primary_keys}) from {validation_tbl}) as distinct_key_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
-    )
+    validation_strategy = table_mapping.validation_strategy
+    
+    if validation_strategy == "hash_based":
+        # For hash-based validation, check if the table has p_keys column
+        # If not, it's likely a regular validation table, so we'll use a different approach
+        try:
+            # Try to get column names from the validation table using collect() instead of rdd
+            columns_df = spark.sql(f"SHOW COLUMNS FROM {validation_tbl}")
+            columns = [row.col_name for row in columns_df.collect()]
+            
+            if 'p_keys' in columns:
+                # This is a hash validation table with p_keys column
+                df = spark.sql(
+                    f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(distinct p_keys) from {validation_tbl}) as distinct_key_count, (select count(distinct row_hash) from {validation_tbl}) as distinct_hash_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
+                )
+            else:
+                # This is a regular validation table, use total count only
+                df = spark.sql(
+                    f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(*) from {validation_tbl}) as distinct_key_count, NULL as distinct_hash_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
+                )
+        except Exception as e:
+            # Fallback: assume it's a regular table and use total count
+            print(f"Warning: Could not determine table structure for {validation_tbl}, using fallback approach: {e}")
+            df = spark.sql(
+                f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(*) from {validation_tbl}) as distinct_key_count, NULL as distinct_hash_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
+            )
+    else:
+        # Original primary key logic
+        primary_keys = ", ".join(table_mapping.tgt_primary_keys)
+        df = spark.sql(
+            f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(distinct {primary_keys}) from {validation_tbl}) as distinct_key_count, NULL as distinct_hash_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
+        )
     return df
 
 # COMMAND ----------
@@ -1277,7 +1529,6 @@ def generate_tgt_alias(all_columns, tgt_columns, col_mapping):
 # COMMAND ----------
 
 from pyspark.sql.window import Window
-from pyspark.sql.functions import col,monotonically_increasing_id,row_number
 
 def create_normailzed_views(
     src_validation_tbl, tgt_validation_tbl, col_mapping, iteration_name
@@ -1347,10 +1598,10 @@ def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_valid
   metrics['tgt_wrhse'] = table_mapping.tgt_warehouse
   metrics['tgt_tbl'] = tgt_tbl = table_mapping.tgt_table
   metrics['col_mapping'] = table_mapping.pretty_col_mapping
-  metrics['tgt_primary_keys'] = ", ".join(table_mapping.tgt_primary_keys)
+  metrics['tgt_primary_keys'] = ", ".join(table_mapping.tgt_primary_keys) if table_mapping.tgt_primary_keys else ""
   metrics['exclude_fields_from_summary'] = table_mapping.exclude_fields_from_summary
   metrics['date_bucket'] = table_mapping.date_bucket
-  metrics['mismatch_exclude_fields'] = "|".join(table_mapping.mismatch_exclude_fields)
+  metrics['mismatch_exclude_fields'] = "|".join(table_mapping.mismatch_exclude_fields) if table_mapping.mismatch_exclude_fields else ""
   metrics['src_sql_override'] = table_mapping.src_sql_override
   metrics['tgt_sql_override'] = table_mapping.tgt_sql_override
   metrics['src_data_load_filter'] = table_mapping.src_data_load_filter
@@ -1359,16 +1610,43 @@ def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_valid
   metrics['anomalies_table_name'] = anomalies_table_name = f"{validation_data_db}.{workflow_name}___{table_family}__anomalies"
   metrics['quick_validation'] = table_mapping.quick_validation
 
-  metrics['src_records'] = spark.sql(f'select total_record_count src_records from {PRIMARY_KEY_VALIDATION} where iteration_name ="{iteration_name}" and lower(table_family) = lower("{table_family}") and table_name = "{src_tbl}"').collect()[0]["src_records"]
-  metrics['tgt_records'] = spark.sql(f'select total_record_count tgt_records from {PRIMARY_KEY_VALIDATION} where iteration_name ="{iteration_name}" and lower(table_family) = lower("{table_family}") and table_name = "{tgt_tbl}"').collect()[0]["tgt_records"]
-  metrics['src_extras'] = spark.sql(f'select count(type) src_extras from {anomalies_table_name} where iteration_name ="{iteration_name}" and type= "src_extras"').collect()[0]["src_extras"]
-  metrics['tgt_extras'] = spark.sql(f'select count(type) tgt_extras from {anomalies_table_name} where iteration_name ="{iteration_name}" and type= "tgt_extras"').collect()[0]["tgt_extras"]
-  metrics['mismatches'] = spark.sql(f'select count(type) mismatches from {anomalies_table_name} where iteration_name ="{iteration_name}" and type= "src_mismatches"').collect()[0]["mismatches"]
-  metrics['matches'] = metrics['src_records'] - metrics['mismatches'] - metrics['src_extras'] 
-  metrics['src_delta_table_size'] = spark.sql(f"""describe detail {src_validation_tbl}""").select("sizeInBytes").collect()[0]["sizeInBytes"]
-  metrics['tgt_delta_table_size'] = spark.sql(f"""describe detail {tgt_validation_tbl}""").select("sizeInBytes").collect()[0]["sizeInBytes"]
-  metrics['hash_src_records'] = "NULL"
-  metrics['hash_tgt_records'] = "NULL"
+  # Check if this is hash-based validation (src_hash_validation_tbl and tgt_hash_validation_tbl are provided)
+  if src_hash_validation_tbl and tgt_hash_validation_tbl:
+    # Hash-based validation metrics
+    print("Capturing metrics for hash-based validation...")
+    metrics['src_records'] = spark.sql(f'select count(*) as src_records from {src_hash_validation_tbl}').collect()[0]["src_records"]
+    metrics['tgt_records'] = spark.sql(f'select count(*) as tgt_records from {tgt_hash_validation_tbl}').collect()[0]["tgt_records"]
+    
+    # Use hash anomalies table for hash-based validation
+    hash_anomalies_table_name = f"{validation_data_db}.{workflow_name}___{table_family.replace('.', '_')}__hash_anomalies"
+    metrics['src_extras'] = spark.sql(f'select count(comparison_type) as src_extras from {hash_anomalies_table_name} where iteration_name ="{iteration_name}" and comparison_type= "src_extras"').collect()[0]["src_extras"]
+    metrics['tgt_extras'] = spark.sql(f'select count(comparison_type) as tgt_extras from {hash_anomalies_table_name} where iteration_name ="{iteration_name}" and comparison_type= "tgt_extras"').collect()[0]["tgt_extras"]
+    metrics['mismatches'] = spark.sql(f'select count(comparison_type) as mismatches from {hash_anomalies_table_name} where iteration_name ="{iteration_name}" and comparison_type= "mismatches"').collect()[0]["mismatches"]
+    metrics['matches'] = spark.sql(f'select count(comparison_type) as matches from {hash_anomalies_table_name} where iteration_name ="{iteration_name}" and comparison_type= "matches"').collect()[0]["matches"]
+    
+    metrics['src_delta_table_size'] = spark.sql(f"""describe detail {src_hash_validation_tbl}""").select("sizeInBytes").collect()[0]["sizeInBytes"]
+    metrics['tgt_delta_table_size'] = spark.sql(f"""describe detail {tgt_hash_validation_tbl}""").select("sizeInBytes").collect()[0]["sizeInBytes"]
+    metrics['hash_src_records'] = metrics['src_records']
+    metrics['hash_tgt_records'] = metrics['tgt_records']
+    metrics['hash_mismatches'] = metrics['mismatches']
+    metrics['hash_src_extras'] = metrics['src_extras']
+    metrics['hash_tgt_extras'] = metrics['tgt_extras']
+    metrics['hash_matches'] = metrics['matches']
+    metrics['hash_src_delta_table_size'] = metrics['src_delta_table_size']
+    metrics['hash_tgt_delta_table_size'] = metrics['tgt_delta_table_size']
+  else:
+    # Primary key validation metrics (original logic)
+    print("Capturing metrics for primary key validation...")
+    metrics['src_records'] = spark.sql(f'select total_record_count src_records from {PRIMARY_KEY_VALIDATION} where iteration_name ="{iteration_name}" and lower(table_family) = lower("{table_family}") and table_name = "{src_tbl}"').collect()[0]["src_records"]
+    metrics['tgt_records'] = spark.sql(f'select total_record_count tgt_records from {PRIMARY_KEY_VALIDATION} where iteration_name ="{iteration_name}" and lower(table_family) = lower("{table_family}") and table_name = "{tgt_tbl}"').collect()[0]["tgt_records"]
+    metrics['src_extras'] = spark.sql(f'select count(type) src_extras from {anomalies_table_name} where iteration_name ="{iteration_name}" and type= "src_extras"').collect()[0]["src_extras"]
+    metrics['tgt_extras'] = spark.sql(f'select count(type) tgt_extras from {anomalies_table_name} where iteration_name ="{iteration_name}" and type= "tgt_extras"').collect()[0]["tgt_extras"]
+    metrics['mismatches'] = spark.sql(f'select count(type) mismatches from {anomalies_table_name} where iteration_name ="{iteration_name}" and type= "src_mismatches"').collect()[0]["mismatches"]
+    metrics['matches'] = metrics['src_records'] - metrics['mismatches'] - metrics['src_extras'] 
+    metrics['src_delta_table_size'] = spark.sql(f"""describe detail {src_validation_tbl}""").select("sizeInBytes").collect()[0]["sizeInBytes"]
+    metrics['tgt_delta_table_size'] = spark.sql(f"""describe detail {tgt_validation_tbl}""").select("sizeInBytes").collect()[0]["sizeInBytes"]
+    metrics['hash_src_records'] = "NULL"
+    metrics['hash_tgt_records'] = "NULL"
   metrics['hash_mismatches'] = "NULL"
   metrics['hash_src_extras'] = "NULL"
   metrics['hash_tgt_extras'] = "NULL"
@@ -1514,9 +1792,7 @@ def trigger_validation(table_mapping):
 #   logger.info(f"source path: {src_path}")
 
 
-
 #   src_path = "abfss://rilgolddata@pepsiadlsuc.dfs.core.windows.net/samples_tpch_orders/"
-
 
 
   try:
@@ -1540,7 +1816,9 @@ def trigger_validation(table_mapping):
     
     logger.info("capturing source schema")
     log_update("SRC_SCHEMA_INITIATED")
+
     captureSrcSchema(src_warehouse, src_table, src_jdbc_options, table_mapping, src_path, src_path_part_params)
+
     log_update("SRC_SCHEMA_COMPLETED")
 
     logger.info("capturing target schema")
@@ -1570,8 +1848,8 @@ def trigger_validation(table_mapping):
         src_hash_validation_tbl, tgt_hash_validation_tbl, tgt_primary_keys, col_mapping, workflow_name, table_family)
         src_pk_columns = generate_src_columns(tgt_primary_keys, col_mapping)
         tgt_pk_columns = ",".join(tgt_primary_keys)
-        # src_sql_override = generate_sql_override_for_hash_anomalies(src_table, src_sql_override, src_pk_columns, src_anomalies_hash_in_clause)
-        # tgt_sql_override = generate_sql_override_for_hash_anomalies(tgt_table, tgt_sql_override, tgt_pk_columns, tgt_anomalies_hash_in_clause)
+        src_sql_override = generate_sql_override_for_hash_anomalies(src_table, src_sql_override, src_pk_columns, src_anomalies_hash_in_clause)
+        tgt_sql_override = generate_sql_override_for_hash_anomalies(tgt_table, tgt_sql_override, tgt_pk_columns, tgt_anomalies_hash_in_clause)
         log_update("HASH_ANOMALIES_COMPLETED")
         
     logger.info("capturing source snapshot")
@@ -1593,16 +1871,20 @@ def trigger_validation(table_mapping):
     )
     log_update("NORM_VIEW_COMPLETED")
 
-    logger.info("primary key validation")
-    log_update("PK_VALIDATION_INITIATED")
-    primary_key_validation(
-        src_validation_view,
-        tgt_validation_view,
-        table_mapping,
-        run_timestamp,
-        iteration_name,
-    )
-    log_update("PK_VALIDATION_COMPLETED")
+    # Only run primary key validation for primary key-based strategy
+    if table_mapping.validation_strategy != "hash_based":
+        log_update("PK_VALIDATION_INITIATED")
+        primary_key_validation(
+            src_validation_view,
+            tgt_validation_view,
+            table_mapping,
+            run_timestamp,
+            iteration_name,
+        )
+        log_update("PK_VALIDATION_COMPLETED")
+    else:
+        print("Skipping primary key validation for hash-based validation strategy")
+        log_update("PK_VALIDATION_SKIPPED_FOR_HASH_BASED")
 
     logger.info("data mismatch validation")
     log_update("MISMATCH_VALIDATION_INITIATED")
@@ -1679,12 +1961,175 @@ else :
   workflow_table_families = dbutils.widgets.get("03-workflow:table_family")
   logger.info(workflow_table_families)
 
+
+# COMMAND ----------
+
+def run_hash_based_validation(table_mapping, run_timestamp, iteration_name):
+    """
+    Hash-based validation flow for tables without primary keys
+    Always runs quick validation since full validation is designed for primary key-based validation
+    Args:
+        table_mapping: TableMapping object
+        run_timestamp: Run timestamp
+        iteration_name: Iteration name
+    Returns:
+        Validation results
+    """
+    # Extract variables for logging
+    workflow_name = table_mapping.workflow_name
+    table_family = table_mapping.table_family
+    src_warehouse = table_mapping.src_warehouse
+    src_table = table_mapping.src_table
+    tgt_warehouse = table_mapping.tgt_warehouse
+    tgt_table = table_mapping.tgt_table
+    # Use global variables for streamlit user info (not TableMapping attributes)
+    validation_log_table = VALIDATION_LOG_TABLE
+    
+    # Define log update function for hash-based validation
+    def log_update(status):
+        spark.sql(f"""
+        UPDATE {validation_log_table}
+          SET
+          validation_run_status = '{status}',
+          validation_run_end_time = now()
+          WHERE iteration_name = '{iteration_name}'
+          AND workflow_name ='{workflow_name}'
+          AND src_warehouse = '{src_warehouse}' 
+          AND src_table = '{src_table}'
+          AND tgt_warehouse = '{tgt_warehouse}'
+          AND tgt_table = '{tgt_table}'
+          AND table_family = '{table_family}'""")
+    
+    try:
+        print(f"Running hash-based validation for {table_family}")
+        print(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
+        
+        # Insert initial validation log entry
+        spark.sql(f"INSERT INTO {validation_log_table} (workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ('{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
+        
+        log_update("HASH_VALIDATION_INITIATED")
+        
+        # 1. Get table columns
+        log_update("HASH_SCHEMA_INITIATED")
+        src_columns = spark.sql(f"show columns from {table_mapping.src_table}").filter(~col("col_name").isin("run_timestamp__mmp", "iteration_name__mmp")).collect()
+        tgt_columns = spark.sql(f"show columns from {table_mapping.tgt_table}").filter(~col("col_name").isin("run_timestamp__mmp", "iteration_name__mmp")).collect()
+        log_update("HASH_SCHEMA_COMPLETED")
+        
+        # 2. Create row hash validation tables
+        log_update("HASH_TABLE_CREATION_INITIATED")
+        src_hash_table, src_hash_sql = create_row_hash_validation_table(
+            table_mapping.src_table, 
+            [col['col_name'] for col in src_columns],
+            table_mapping.mismatch_exclude_fields,
+            table_mapping.validation_data_db,
+            table_mapping.workflow_name,
+            table_mapping.table_family,
+            run_timestamp,
+            iteration_name
+        )
+        
+        tgt_hash_table, tgt_hash_sql = create_row_hash_validation_table(
+            table_mapping.tgt_table,
+            [col['col_name'] for col in tgt_columns],
+            table_mapping.mismatch_exclude_fields,
+            table_mapping.validation_data_db,
+            table_mapping.workflow_name,
+            table_mapping.table_family,
+            run_timestamp,
+            iteration_name
+        )
+        
+        # Execute hash table creation
+        print(f"Creating source hash table: {src_hash_table}")
+        spark.sql(src_hash_sql)
+        print(f"Creating target hash table: {tgt_hash_table}")
+        spark.sql(tgt_hash_sql)
+        log_update("HASH_TABLE_CREATION_COMPLETED")
+        
+        # For hash-based validation, we always use quick validation since full validation
+        # (with column-level comparisons) is designed for primary key-based validation
+        log_update("HASH_ANOMALIES_INITIATED")
+        print("Running hash-based validation (always quick validation)...")
+        anomalies = getHashAnomaliesNoPK(
+            src_hash_table, tgt_hash_table, 
+            table_mapping.workflow_name, table_mapping.table_family,
+            run_timestamp, iteration_name
+        )
+        
+        # Save hash anomalies to dedicated table
+        hash_anomalies_table_name = f"{table_mapping.validation_data_db}.{table_mapping.workflow_name}___{table_mapping.table_family.replace('.', '_')}__hash_anomalies"
+        anomalies.write.mode("append").saveAsTable(hash_anomalies_table_name)
+        log_update("HASH_ANOMALIES_COMPLETED")
+        
+        # Generate validation summary for hash-based validation
+        log_update("HASH_SUMMARY_INITIATED")
+        print("Generating validation summary for hash-based validation...")
+        table_metrics = capture_metrics(iteration_name, table_mapping, None, None, src_hash_table, tgt_hash_table)
+        runner(table_metrics)
+        print(f"Completed Validation Summary for Hash-based Workflow: {table_mapping.workflow_name}; Table Family: {table_mapping.table_family}")
+        log_update("HASH_SUMMARY_COMPLETED")
+        
+        log_update("SUCCESS")
+        print(f"Completed Hash-based Validation Run for Workflow: {workflow_name}; Table Family: {table_family}")
+        
+        return {
+            'src_hash_table': src_hash_table,
+            'tgt_hash_table': tgt_hash_table,
+            'anomalies': anomalies,
+            'hash_anomalies_table': hash_anomalies_table_name,
+            'validation_strategy': 'hash_based'
+        }
+        
+    except Exception as exc:
+        print(f'Catch inside run_hash_based_validation: {exc}')
+        exc = str(exc).replace("'", "\\'")
+        spark.sql(f"""
+        UPDATE {validation_log_table}
+          SET
+          validation_run_status = 'FAILED',
+          validation_run_end_time = now(),
+          exception = '{exc}'
+          WHERE iteration_name = '{iteration_name}'
+          AND workflow_name ='{workflow_name}'
+          AND src_warehouse = '{src_warehouse}' 
+          AND src_table = '{src_table}'
+          AND tgt_warehouse = '{tgt_warehouse}'
+          AND tgt_table = '{tgt_table}'
+          AND table_family = '{table_family}'""")
+        
+        raise exc
+
 # COMMAND ----------
 
 # DBTITLE 0,able 
 from pyspark.sql.functions import lit, to_timestamp
 from concurrent.futures import ThreadPoolExecutor
 from  itertools import repeat
+
+def run_validation_with_strategy(table_mapping, run_timestamp, iteration_name, quick_validation=False):
+    """
+    Main validation orchestrator that chooses strategy based on primary key availability
+    Args:
+        table_mapping: TableMapping object (or Row object that can be converted)
+        run_timestamp: Run timestamp
+        iteration_name: Iteration name
+        quick_validation: Whether to run quick validation only
+    Returns:
+        Validation results
+    """
+    # Convert to proper TableMapping object if needed (same as trigger_validation does)
+    table_mapping_dict = table_mapping.asDict()
+    table_mapping = TableMapping(**table_mapping_dict)
+    
+    validation_strategy = table_mapping.validation_strategy
+    
+    if validation_strategy == "hash_based":
+        print(f"Using hash-based validation strategy for {table_mapping.table_family}")
+        return run_hash_based_validation(table_mapping, run_timestamp, iteration_name)
+    else:
+        print(f"Using primary key-based validation strategy for {table_mapping.table_family}")
+        # Use existing validation flow
+        return trigger_validation(table_mapping)
 
 table_config_table = TABLE_CONFIG_TABLE
 validation_log_table = VALIDATION_LOG_TABLE
@@ -1702,7 +2147,7 @@ mappings = readValidationTableList(validation_mapping_table, table_config_table,
 
 with ThreadPoolExecutor(max_workers=PARALLELISM) as exe:
     try:
-        for r in exe.map(trigger_validation,mappings):
+        for r in exe.map(run_validation_with_strategy,mappings,repeat(run_timestamp),repeat(iteration_name)):
             try:
                 print(r)
             except Exception as exc:

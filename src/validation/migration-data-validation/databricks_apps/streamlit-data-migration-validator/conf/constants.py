@@ -8,9 +8,14 @@
 # Field Eng Cluster
 # CLUSTER_ID = "0709-132523-cnhxf2p6"
 # Mahesh's Cluster
-CLUSTER_ID = "0911-042014-xhswdssn"
+# CLUSTER_ID = "0911-042014-xhswdssn"
 
-JOB_ID = 550313681799493
+# Aman_Cluster
+CLUSTER_ID = "0905-065659-d9qjd02n"
+
+JOB_ID = 269412151914253
+# 592384036258611
+
 DATABRICKS_INSTANCE = "https://adb-984752964297111.11.azuredatabricks.net"
 
 # ACCESS_TOKEN_SCOPE = "mmp"

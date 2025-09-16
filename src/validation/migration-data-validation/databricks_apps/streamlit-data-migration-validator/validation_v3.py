@@ -658,18 +658,56 @@ with tab4:
 with tab5:
     st.header("Anomalies")
 
-    
-    anomalies_data_tbl=spark.sql(f"select concat(validation_data_db,'.',workflow_name,'___',table_family,'__anomalies') as anomalies_data from {constants.VALIDATION_MAPPING_TABLE} where workflow_name = '{workflow_name}' and table_family ='{table_family}'").collect()[0]["anomalies_data"]
+    # Check for both primary key anomalies and hash anomalies
+    anomalies_data_tbl = spark.sql(f"select concat(validation_data_db,'.',workflow_name,'___',table_family,'__anomalies') as anomalies_data from {constants.VALIDATION_MAPPING_TABLE} where workflow_name = '{workflow_name}' and table_family ='{table_family}'").collect()[0]["anomalies_data"]
+    hash_anomalies_data_tbl = spark.sql(f"select concat(validation_data_db,'.',workflow_name,'___',replace(table_family, '.', '_'),'__hash_anomalies') as hash_anomalies_data from {constants.VALIDATION_MAPPING_TABLE} where workflow_name = '{workflow_name}' and table_family ='{table_family}'").collect()[0]["hash_anomalies_data"]
 
-    if(spark.catalog.tableExists(anomalies_data_tbl)):
+    # Check which anomaly tables exist
+    pk_anomalies_exist = spark.catalog.tableExists(anomalies_data_tbl)
+    hash_anomalies_exist = spark.catalog.tableExists(hash_anomalies_data_tbl)
 
-        anomalies = spark.sql(f"select distinct `type` as anomaly from {anomalies_data_tbl} where iteration_name ='{iteration_name}'").toPandas()
-        
-        if (not anomalies.empty):
-            @st.fragment
-            def anomaly_fragment():
-                selected_anomaly = st.selectbox("Types of Anomalies:", anomalies)
-                st.warning('Truncated Data limited to 10000 records', icon="⚠️")
-                st.dataframe(spark.sql(f"select * from {anomalies_data_tbl} where iteration_name ='{iteration_name}' and `type` = '{selected_anomaly}' limit 10000").toPandas())
-            anomaly_fragment()
+    if pk_anomalies_exist or hash_anomalies_exist:
+        # Create tabs for different anomaly types
+        if pk_anomalies_exist and hash_anomalies_exist:
+            anomaly_tab1, anomaly_tab2 = st.tabs(["Primary Key Anomalies", "Hash Anomalies"])
+        elif pk_anomalies_exist:
+            anomaly_tab1 = st.container()
+            anomaly_tab2 = None
+        else:
+            anomaly_tab1 = None
+            anomaly_tab2 = st.container()
+
+        # Primary Key Anomalies Tab
+        if pk_anomalies_exist:
+            with (anomaly_tab1 if pk_anomalies_exist and hash_anomalies_exist else st.container()):
+                st.subheader("Primary Key Anomalies")
+                anomalies = spark.sql(f"select distinct `type` as anomaly from {anomalies_data_tbl} where iteration_name ='{iteration_name}'").toPandas()
+                
+                if (not anomalies.empty):
+                    @st.fragment
+                    def pk_anomaly_fragment():
+                        selected_anomaly = st.selectbox("Types of Primary Key Anomalies:", anomalies, key="pk_anomalies")
+                        st.warning('Truncated Data limited to 10000 records', icon="⚠️")
+                        st.dataframe(spark.sql(f"select * from {anomalies_data_tbl} where iteration_name ='{iteration_name}' and `type` = '{selected_anomaly}' limit 10000").toPandas())
+                    pk_anomaly_fragment()
+                else:
+                    st.info("No primary key anomalies found for this iteration.")
+
+        # Hash Anomalies Tab
+        if hash_anomalies_exist:
+            with (anomaly_tab2 if pk_anomalies_exist and hash_anomalies_exist else st.container()):
+                st.subheader("Hash Anomalies")
+                hash_anomalies = spark.sql(f"select distinct comparison_type as anomaly from {hash_anomalies_data_tbl} where iteration_name ='{iteration_name}'").toPandas()
+                
+                if (not hash_anomalies.empty):
+                    @st.fragment
+                    def hash_anomaly_fragment():
+                        selected_hash_anomaly = st.selectbox("Types of Hash Anomalies:", hash_anomalies, key="hash_anomalies")
+                        st.warning('Truncated Data limited to 10000 records', icon="⚠️")
+                        st.dataframe(spark.sql(f"select * from {hash_anomalies_data_tbl} where iteration_name ='{iteration_name}' and comparison_type = '{selected_hash_anomaly}' limit 10000").toPandas())
+                    hash_anomaly_fragment()
+                else:
+                    st.info("No hash anomalies found for this iteration.")
+    else:
+        st.info("No anomaly tables found for this table family.")
 
