@@ -1680,6 +1680,11 @@ def trigger_validation(table_mapping):
   retain_tables_list = table_mapping.retain_tables_list
   src_cast_to_string = table_mapping.src_cast_to_string
   quick_validation = table_mapping.quick_validation
+
+  print("quick_validation-->",quick_validation)
+
+  src_path = "abfss://rilgolddata@pepsiadlsuc.dfs.core.windows.net/orc_test_data/sample_data_with_pii_2/"
+
   try:
     def log_update(status):
       spark.sql(f"""

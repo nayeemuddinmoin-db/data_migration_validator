@@ -1,14 +1,20 @@
 resources:
   jobs:
-    hello_world:
-      name: Serverless Hello World job
+    wf_dmv_validator_runner:
+      name: wf_dmv_validator_runner
+      max_concurrent_runs: 10
       tasks:
-        - task_key: task
-          spark_python_task:
-            python_file: ../src/job/main.py
-          environment_key: default
-
-      environments:
-        - environment_key: default
-          spec:
-            client: "1"
+        - task_key: tsk-dmv-validator-run
+          notebook_task:
+            notebook_path: ../src/validation/migration-data-validation/migration-data-validation.py
+            base_parameters:
+              00-triggered_from_workflow: ""
+              01-iteration_name_suffix: ""
+              03-workflow:table_family: ""
+              05-user_email: ""
+              04-user_name: ""
+              02-workflow_name: ""
+            source: WORKSPACE
+          existing_cluster_id: 0829-052756-oyofxpy7
+      queue:
+        enabled: true
