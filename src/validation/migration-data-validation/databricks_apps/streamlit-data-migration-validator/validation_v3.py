@@ -395,11 +395,35 @@ with tab2:
     ) as comment_compare,
     if(
         rlike(
-            lower(src_data_type),
-            {src_wrhse}_compatibility_regex),
+        -- Struct
+  case when lower(src_data_type) like 'struct<%' then concat_ws(
+    ',',
+    array_union(
+      array(regexp_extract(lower(src_data_type), '^([a-zA-Z0-9_]+)', 1)),
+      transform(
+        split(src_data_type, ':'),
+        x -> regexp_extract(x, '([a-zA-Z0-9_]+)(?=[>,])?', 1)
+      )
+    )
+  )
+
+  -- Array or Map
+  when lower(src_data_type) like 'array<%' or lower(src_data_type) like 'map<%' then concat_ws(
+    ',',
+    array_union(
+      array(regexp_extract(lower(src_data_type), '^([a-zA-Z0-9_]+)', 1)),
+      transform(
+        split(regexp_extract(lower(src_data_type), '<(.+)>', 1), ','),
+        x -> regexp_extract(x, '([a-zA-Z0-9_]+)', 1)
+      )
+    )
+  )
+  else lower(src_data_type) end 
+  ,
+          {src_wrhse}_compatibility_regex),
         true,
         false
-        )as data_type_compatibility,
+      )as data_type_compatibility,
     if(y.has_precision,  
     if(
         (
@@ -474,12 +498,36 @@ with tab2:
             'MISMATCH'
         ) as comment_compare,
         if(
-            rlike(
-                lower(src_data_type),
-                src_wrhse_compatibility_regex),
-            true,
-            false
-            )as data_type_compatibility,
+        rlike(
+        -- Struct
+  case when lower(src_data_type) like 'struct<%' then concat_ws(
+    ',',
+    array_union(
+      array(regexp_extract(lower(src_data_type), '^([a-zA-Z0-9_]+)', 1)),
+      transform(
+        split(src_data_type, ':'),
+        x -> regexp_extract(x, '([a-zA-Z0-9_]+)(?=[>,])?', 1)
+      )
+    )
+  )
+
+  -- Array or Map
+  when lower(src_data_type) like 'array<%' or lower(src_data_type) like 'map<%' then concat_ws(
+    ',',
+    array_union(
+      array(regexp_extract(lower(src_data_type), '^([a-zA-Z0-9_]+)', 1)),
+      transform(
+        split(regexp_extract(lower(src_data_type), '<(.+)>', 1), ','),
+        x -> regexp_extract(x, '([a-zA-Z0-9_]+)', 1)
+      )
+    )
+  )
+  else lower(src_data_type) end 
+  ,
+          src_wrhse_compatibility_regex),
+        true,
+        false
+      )as data_type_compatibility,
         if(y.has_precision,  
         if(
             (

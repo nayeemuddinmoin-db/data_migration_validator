@@ -8,10 +8,47 @@
 
 # COMMAND ----------
 
-from pyspark.sql.functions import lit, to_timestamp, coalesce
+from pyspark.sql.functions import lit, to_timestamp, coalesce,regexp_extract
+from typing import List, Dict, Any
+import re
 
+import logging
+# ---- Logging Setup ----
+logging.basicConfig(
+    format="%(asctime)s.%(msecs)03d [%(filename)s:%(lineno)d] - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
-def captureDatabricksSchema(tbl, path=None):
+# COMMAND ----------
+
+def get_partitions(df, partition_columns:List[str], base_file_path:str=None,
+                       d_partition_col_datatype_mapping:Dict[str,Any]=None):
+
+        df = df.withColumn("_relative_path", col("_metadata.file_path"))
+        if base_file_path:
+            df = (
+                df
+                .withColumn("_relative_path",
+                            regexp_extract(col("_metadata.file_path"), f"^{re.escape(base_file_path)}(.*)$", 1))
+            )
+        if not d_partition_col_datatype_mapping:
+            d_partition_col_datatype_mapping = {}
+        if partition_columns:
+            for partition_col in partition_columns:
+                df = df.withColumn(
+                    partition_col,
+                    regexp_extract(col("_relative_path"), f"{partition_col}=([^/]+)", 1)
+                )
+                datatype = d_partition_col_datatype_mapping.get(partition_col, 'string')
+                if datatype and datatype != 'string':
+                    df = df.withColumn(partition_col, col(partition_col).cast(datatype))
+
+        df = df.drop("_relative_path")
+        return df
+
+def captureDatabricksSchema(tbl, path=None, src_path_part_params=None):
     catalog = "source_system"
     splits = tbl.split(".")
     #detect the uc and legacy namespace scheme
@@ -34,7 +71,8 @@ def captureDatabricksSchema(tbl, path=None):
         ])
 
         # Read the ORC file into a DataFrame
-        df = spark.read.format("orc").load(f'{path}')
+        df_original = spark.read.format("orc").load(path)
+        df = get_partitions(df_original, src_path_part_params.get("partition_columns"),src_path_part_params.get("base_file_path"),src_path_part_params.get("d_partition_col_datatype_mapping"))
 
         # Convert schema to dataframe with explicit schema
         tbl_schema = spark.createDataFrame(
@@ -118,17 +156,31 @@ def processDatabricksColNames(table, col_mapping, primary_keys_string, mismatch_
 
 # COMMAND ----------
 
-def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fields, sql_override, data_load_filter, table_mapping, path=None):
+def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fields, sql_override, data_load_filter, table_mapping, path=None, src_path_part_params=None):
 
   col_mapping = table_mapping.col_mapping
   cm = col_mapping
   load_filter = data_load_filter if (not data_load_filter is None) else "1=1"
 
   if path is None:
+
+    batch_load_id = spark.sql(f"""select max(batch_load_id) as max_batch_load_id
+              from {INGESTION_AUDIT_TABLE}
+              where status = 'COMPLETED'
+                and target_table_name = '{table}'""").first()[0]
+    batch_load_id_filter = f" AND _aud_batch_load_id IN ({batch_load_id})"
+    logger.info(f"batch_load_id_filter: {batch_load_id_filter}")
+
     read_sql = sql_override if (not sql_override is None) else f"select * from {table}"
-    read_sql_compiled = f"(SELECT a.* FROM ({read_sql.format(**locals())})a where {load_filter})b"
+
+    # read_sql_compiled = f"({read_sql.format(**locals())})a"
+    read_sql_compiled = f"(SELECT a.* FROM ({read_sql.format(**locals())})a where {load_filter}{batch_load_id_filter})b"
   else:
-    read_sql_compiled = spark.read.format("orc").load(path).where(f"{load_filter}")
+    
+    df_original = spark.read.format("orc").load(path)
+    df = get_partitions(df_original, src_path_part_params.get("partition_columns"),src_path_part_params.get("base_file_path"),src_path_part_params.get("d_partition_col_datatype_mapping"))
+
+    read_sql_compiled = df.where(f"{load_filter}")
 
   col_list, col_cast_list = processDatabricksColNames(read_sql_compiled, col_mapping, primary_keys_string, mismatch_exclude_fields, path)
 
@@ -170,17 +222,27 @@ def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fiel
 # COMMAND ----------
 
 from pyspark.sql.types import StringType    
-def captureDatabricksTable(table, sql_override, data_load_filter, src_cast_to_string,path=None):
+def captureDatabricksTable(table, sql_override, data_load_filter, src_cast_to_string,path=None,src_path_part_params=None):
     load_filter = data_load_filter if (not data_load_filter is None) else "1=1"
     read_sql = sql_override if (not sql_override is None) else f"select * from {table}"
     if path is None:
-        read_sql_compiled = f"SELECT a.* FROM ({read_sql.format(**locals())})a where {load_filter}"
+        batch_load_id = spark.sql(f"""select max(batch_load_id) as max_batch_load_id
+              from {INGESTION_AUDIT_TABLE}
+              where status = 'COMPLETED'
+                and target_table_name = '{table}'""").first()[0]
+        batch_load_id_filter = f" AND _aud_batch_load_id IN ({batch_load_id})"
+
+        logger.info(f"batch_load_id_filter: {batch_load_id_filter}")
+
+        read_sql_compiled = f"SELECT a.* FROM ({read_sql.format(**locals())})a where {load_filter}{batch_load_id_filter}"
         print(f"{read_sql}\n{read_sql_compiled}")
         print(f"Capturing Databricks Contents for the table: {table}")
         df = spark.sql(read_sql_compiled)
     else:
         print("Reading src from path op...")
-        df = spark.read.format("orc").load(path).where(f"{load_filter}")
+        df_original = spark.read.format("orc").load(path)
+        df = get_partitions(df_original, src_path_part_params.get("partition_columns"),src_path_part_params.get("base_file_path"),src_path_part_params.get("d_partition_col_datatype_mapping"))
+        df = df.where(f"{load_filter}")
     # df = spark.read.table(table).filter(load_filter)
     to_str = df.columns
     if src_cast_to_string:

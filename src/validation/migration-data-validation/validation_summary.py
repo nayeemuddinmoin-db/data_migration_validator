@@ -425,20 +425,43 @@ def data_type_compatibility_check(table_metrics):
   SELECT count_if(not final_compatibility) rec_count FROM(
   select *, if(
         rlike(
-          lower(src_data_type),
+        -- Struct
+  case when lower(src_data_type) like 'struct<%' then concat_ws(
+    ',',
+    array_union(
+      array(regexp_extract(lower(src_data_type), '^([a-zA-Z0-9_]+)', 1)),
+      transform(
+        split(src_data_type, ':'),
+        x -> regexp_extract(x, '([a-zA-Z0-9_]+)(?=[>,])?', 1)
+      )
+    )
+  )
+
+  -- Array or Map
+  when lower(src_data_type) like 'array<%' or lower(src_data_type) like 'map<%' then concat_ws(
+    ',',
+    array_union(
+      array(regexp_extract(lower(src_data_type), '^([a-zA-Z0-9_]+)', 1)),
+      transform(
+        split(regexp_extract(lower(src_data_type), '<(.+)>', 1), ','),
+        x -> regexp_extract(x, '([a-zA-Z0-9_]+)', 1)
+      )
+    )
+  )
+  else lower(src_data_type) end,
           src_wrhse_compatibility_regex),
         true,
         false
       )as data_type_compatibility,
     if(y.has_precision,  
     if(
-      (
+      int(
         regexp_extract(
           lower(tgt_data_type),
           tgt_wrhse_compatibility_regex,
           2
         )
-      ) -(
+      ) - int(
         regexp_extract(
           lower(src_data_type),
           src_wrhse_compatibility_regex,
