@@ -1617,7 +1617,7 @@ def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_valid
   metrics['quick_validation'] = table_mapping.quick_validation
 
   # Check if this is hash-based validation (src_hash_validation_tbl and tgt_hash_validation_tbl are provided)
-  if src_hash_validation_tbl and tgt_hash_validation_tbl:
+  if src_hash_validation_tbl and tgt_hash_validation_tbl and table_mapping.validation_strategy == "hash_based":
     # Hash-based validation metrics
     print("Capturing metrics for hash-based validation...")
     metrics['src_records'] = spark.sql(f'select count(*) as src_records from {src_hash_validation_tbl}').collect()[0]["src_records"]
