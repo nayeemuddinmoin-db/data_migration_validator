@@ -1406,34 +1406,40 @@ def get_rec_counts_with_primary_keys(
     validation_strategy = table_mapping.validation_strategy
     
     if validation_strategy == "hash_based":
-        # For hash-based validation, check if the table has p_keys column
-        # If not, it's likely a regular validation table, so we'll use a different approach
+        # For hash-based validation, we don't have primary keys
+        # The p_keys column in hash validation tables is actually a row hash, not a primary key
+        # We should only count total records and distinct row hashes
         try:
-            # Try to get column names from the validation table using collect() instead of rdd
+            # Try to get column names from the validation table
             columns_df = spark.sql(f"SHOW COLUMNS FROM {validation_tbl}")
             columns = [row.col_name for row in columns_df.collect()]
-            
-            if 'p_keys' in columns:
-                # This is a hash validation table with p_keys column
-                df = spark.sql(
-                    f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(distinct p_keys) from {validation_tbl}) as distinct_key_count, (select count(distinct row_hash) from {validation_tbl}) as distinct_hash_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
-                )
-            else:
-                # This is a regular validation table, use total count only
-                df = spark.sql(
-                    f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(*) from {validation_tbl}) as distinct_key_count, NULL as distinct_hash_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
-                )
-        except Exception as e:
-            # Fallback: assume it's a regular table and use total count
-            print(f"Warning: Could not determine table structure for {validation_tbl}, using fallback approach: {e}")
+
             df = spark.sql(
-                f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(*) from {validation_tbl}) as distinct_key_count, NULL as distinct_hash_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
+                f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(distinct row_hash) from {validation_tbl}) as distinct_key_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
             )
+            
+        #     if 'row_hash' in columns:
+        #         # This is a hash validation table - count total records and distinct row hashes
+        #         # Note: p_keys in hash validation is actually a row hash, not a primary key
+        #         df = spark.sql(
+        #             f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, NULL::LONG as distinct_key_count, (select count(distinct row_hash) from {validation_tbl}) as distinct_hash_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
+        #         )
+        #     else:
+        #         # This is a regular validation table without hash columns, use total count only
+        #         df = spark.sql(
+        #             f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, NULL::LONG as distinct_key_count, NULL::LONG as distinct_hash_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
+        #         )
+        # except Exception as e:
+        #     # Fallback: assume it's a regular table and use total count
+        #     print(f"Warning: Could not determine table structure for {validation_tbl}, using fallback approach: {e}")
+        #     df = spark.sql(
+        #         f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, NULL::LONG as distinct_key_count, NULL::LONG as distinct_hash_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
+        #     )
     else:
         # Original primary key logic
         primary_keys = ", ".join(table_mapping.tgt_primary_keys)
         df = spark.sql(
-            f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(distinct {primary_keys}) from {validation_tbl}) as distinct_key_count, NULL as distinct_hash_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
+            f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(distinct {primary_keys}) from {validation_tbl}) as distinct_key_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
         )
     return df
 
