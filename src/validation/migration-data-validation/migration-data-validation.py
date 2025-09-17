@@ -2006,10 +2006,10 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_
         logger.info(f"src_path_part_params: {src_path_part_params}")
         
         # 1. Get table columns for hash validation
-        log_update("HASH_SCHEMA_INITIATED")
-        src_columns = spark.sql(f"show columns from {table_mapping.src_table}").filter(~col("col_name").isin("run_timestamp__mmp", "iteration_name__mmp")).collect()
-        tgt_columns = spark.sql(f"show columns from {table_mapping.tgt_table}").filter(~col("col_name").isin("run_timestamp__mmp", "iteration_name__mmp")).collect()
-        log_update("HASH_SCHEMA_COMPLETED")
+        # log_update("HASH_SCHEMA_INITIATED")
+        # src_columns = spark.sql(f"show columns from {table_mapping.src_table}").filter(~col("col_name").isin("run_timestamp__mmp", "iteration_name__mmp")).collect()
+        # tgt_columns = spark.sql(f"show columns from {table_mapping.tgt_table}").filter(~col("col_name").isin("run_timestamp__mmp", "iteration_name__mmp")).collect()
+        # log_update("HASH_SCHEMA_COMPLETED")
         
         # 2. Create row hash validation tables (for tables without primary keys)
         log_update("HASH_TABLE_CREATION_INITIATED")
