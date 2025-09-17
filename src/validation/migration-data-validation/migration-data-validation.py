@@ -1409,14 +1409,14 @@ def get_rec_counts_with_primary_keys(
         # For hash-based validation, we don't have primary keys
         # The p_keys column in hash validation tables is actually a row hash, not a primary key
         # We should only count total records and distinct row hashes
-        try:
+        # try:
             # Try to get column names from the validation table
-            columns_df = spark.sql(f"SHOW COLUMNS FROM {validation_tbl}")
-            columns = [row.col_name for row in columns_df.collect()]
+        columns_df = spark.sql(f"SHOW COLUMNS FROM {validation_tbl}")
+        columns = [row.col_name for row in columns_df.collect()]
 
-            df = spark.sql(
-                f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(distinct row_hash) from {validation_tbl}) as distinct_key_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
-            )
+        df = spark.sql(
+            f"select '{table}' as table_name, (select count(*) from {validation_tbl}) as total_record_count, (select count(distinct row_hash) from {validation_tbl}) as distinct_key_count, to_timestamp('{run_timestamp}') as run_timestamp, '{iteration_name}' as iteration_name, '{workflow_name}' as workflow_name, '{table_family}' as table_family"
+        )
             
         #     if 'row_hash' in columns:
         #         # This is a hash validation table - count total records and distinct row hashes
