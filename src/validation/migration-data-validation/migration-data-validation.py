@@ -1737,6 +1737,21 @@ def trigger_validation(table_mapping):
   quick_validation = table_mapping.quick_validation
   logger.info(f"quick_validation: {quick_validation}")
 
+  # Define log_update function for status tracking
+  def log_update(status):
+    spark.sql(f"""
+    UPDATE {validation_log_table}
+      SET
+      validation_run_status = '{status}',
+      validation_run_end_time = now()
+      WHERE iteration_name = '{iteration_name}'
+      AND workflow_name ='{workflow_name}'
+      AND src_warehouse = '{src_warehouse}' 
+      AND src_table = '{src_table}'
+      AND tgt_warehouse = '{tgt_warehouse}'
+      AND tgt_table = '{tgt_table}'
+      AND table_family = '{table_family}'""")
+
   # Get source path information (needed for both validation strategies)
   src_path = [
     row['source_file_path']
@@ -1792,19 +1807,6 @@ def trigger_validation(table_mapping):
     # Continue with existing primary key-based validation flow
 
   try:
-    def log_update(status):
-      spark.sql(f"""
-      UPDATE {validation_log_table}
-        SET
-        validation_run_status = '{status}',
-        validation_run_end_time = now()
-        WHERE iteration_name = '{iteration_name}'
-        AND workflow_name ='{workflow_name}'
-        AND src_warehouse = '{src_warehouse}' 
-        AND src_table = '{src_table}'
-        AND tgt_warehouse = '{tgt_warehouse}'
-        AND tgt_table = '{tgt_table}'
-        AND table_family = '{table_family}'""")
       
     logger.info(f"""Triggering Validation Run for Workflow: ", {workflow_name}, Table Family: {table_family})""")
     logger.info(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
