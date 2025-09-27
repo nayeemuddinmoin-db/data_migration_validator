@@ -17,8 +17,8 @@ import plotly.express as px
 # import json
 from validation_sqls import retrieve_summary
 
-spark = DatabricksSession.builder.clusterId(constants.CLUSTER_ID).getOrCreate()
-# spark = DatabricksSession.builder.serverless(True).getOrCreate()
+# spark = DatabricksSession.builder.clusterId(constants.CLUSTER_ID).getOrCreate()
+spark = DatabricksSession.builder.serverless(True).getOrCreate()
 import altair as alt
 
 
@@ -426,13 +426,13 @@ with tab2:
       )as data_type_compatibility,
     if(y.has_precision,  
     if(
-        (
+        int(
         regexp_extract(
             lower(tgt_data_type),
             {src_wrhse}_compatibility_regex,
             2
         )
-        ) -(
+        ) - int(
         regexp_extract(
             lower(src_data_type),
             {src_wrhse}_compatibility_regex,
@@ -530,13 +530,13 @@ with tab2:
       )as data_type_compatibility,
         if(y.has_precision,  
         if(
-            (
+            int(
             regexp_extract(
                 lower(tgt_data_type),
                 tgt_wrhse_compatibility_regex,
                 2
             )
-            ) -(
+            ) - int(
             regexp_extract(
                 lower(src_data_type),
                 src_wrhse_compatibility_regex,

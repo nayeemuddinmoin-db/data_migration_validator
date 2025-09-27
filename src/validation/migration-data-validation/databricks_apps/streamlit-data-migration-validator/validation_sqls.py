@@ -11,8 +11,8 @@ import conf.constants as constants
 
 
 def retrieve_summary():
-  spark = DatabricksSession.builder.clusterId(constants.CLUSTER_ID).getOrCreate()
-  # spark = DatabricksSession.builder.serverless(True).getOrCreate()
+  # spark = DatabricksSession.builder.clusterId(constants.CLUSTER_ID).getOrCreate()
+  spark = DatabricksSession.builder.serverless(True).getOrCreate()
 
   df = spark.sql(f'''select
     iteration_name,
