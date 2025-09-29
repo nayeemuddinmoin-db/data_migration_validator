@@ -238,11 +238,12 @@ def captureDatabricksTable(table, sql_override, data_load_filter, src_cast_to_st
         print(f"{read_sql}\n{read_sql_compiled}")
         print(f"Capturing Databricks Contents for the table: {table}")
         df = spark.sql(read_sql_compiled)
+        # print("Captured Tgt Count=",df.count())
     else:
         print("Reading src from path op...")
         df_original = spark.read.format("orc").load(path)
         df = get_partitions(df_original, src_path_part_params.get("partition_columns"),src_path_part_params.get("base_file_path"),src_path_part_params.get("d_partition_col_datatype_mapping"))
-        df = df.where(f"{load_filter}")
+        df = df.where(f"{load_filter}").where(f"{sql_override}")
     # df = spark.read.table(table).filter(load_filter)
     to_str = df.columns
     if src_cast_to_string:

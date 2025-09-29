@@ -426,13 +426,13 @@ with tab2:
       )as data_type_compatibility,
     if(y.has_precision,  
     if(
-        (
+        int(
         regexp_extract(
             lower(tgt_data_type),
             {src_wrhse}_compatibility_regex,
             2
         )
-        ) -(
+        ) - int(
         regexp_extract(
             lower(src_data_type),
             {src_wrhse}_compatibility_regex,
@@ -530,13 +530,13 @@ with tab2:
       )as data_type_compatibility,
         if(y.has_precision,  
         if(
-            (
+            int(
             regexp_extract(
                 lower(tgt_data_type),
                 tgt_wrhse_compatibility_regex,
                 2
             )
-            ) -(
+            ) - int(
             regexp_extract(
                 lower(src_data_type),
                 src_wrhse_compatibility_regex,

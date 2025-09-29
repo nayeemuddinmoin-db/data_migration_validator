@@ -11,16 +11,16 @@
 # CLUSTER_ID = "0911-042014-xhswdssn"
 
 # Aman_Cluster
-CLUSTER_ID = "0911-042014-xhswdssn"
+CLUSTER_ID = "0927-122932-wl2072gn"
 
-JOB_ID = 550313681799493
+JOB_ID = 919069293546107
 DATABRICKS_INSTANCE = "https://adb-984752964297111.11.azuredatabricks.net"
 
 # ACCESS_TOKEN_SCOPE = "mmp"
 # ACCESS_TOKEN_KEY = "workspace_access_token"
 
-VALIDATION_SYSTEM_DB = "cat_ril_nayeem_02.dmvdbpath_system"
-VALIDATION_METRICS_DB = "cat_ril_nayeem_02.dmvdbpath_system_metrics"
+VALIDATION_SYSTEM_DB = "cat_ril_nayeem_03.dmvdb_system"
+VALIDATION_METRICS_DB = "cat_ril_nayeem_03.dmvdb_system_metrics"
 VALIDATION_EXAMPLE_DB = "cat_ril_nayeem_02.dmvdbpath_system_example"
 
 VALIDATION_MAPPING_TABLE = f"{VALIDATION_SYSTEM_DB}.validation_mapping"

@@ -4,3 +4,10 @@ command: [
   "app.py",
   --logger.level=debug
 ]
+env:
+  - name: PIP_NO_INDEX
+    value: 1
+  - name: PIP_FIND_LINKS
+    value: /Volumes/cat_ril_nayeem_01/db01/lib01/
+  - name: DATABRICKS_SERVERLESS_COMPUTE_ID
+    value: auto

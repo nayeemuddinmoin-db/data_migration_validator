@@ -1,5 +1,5 @@
 bundle:
-  name: data_migration_validator_app
+  name: data_migration_validator_app_nayeem
 
 include:
   - resources/*.yml
