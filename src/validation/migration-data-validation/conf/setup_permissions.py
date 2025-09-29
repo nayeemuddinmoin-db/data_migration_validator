@@ -107,6 +107,9 @@ spark.sql(f"GRANT MODIFY ON TABLE {VALIDATION_LOG_TABLE} TO `{JOB_RUN_AS_USER}`"
 ###
 # %sql
 # GRANT SELECT ON ANY FILE TO `5087f00f-2031-47a1-88a4-32844bcd9cbb`;
+if EXTERNAL_LOCATIONS is not None:
+    for ext_loc in EXTERNAL_LOCATIONS:
+        spark.sql(f"GRANT READ FILES ON EXTERNAL LOCATION `{ext_loc}` TO `{JOB_RUN_AS_USER}`")
 
 
 # COMMAND ----------

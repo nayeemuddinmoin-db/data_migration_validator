@@ -17,8 +17,8 @@ import plotly.express as px
 # import json
 from validation_sqls import retrieve_summary
 
-# spark = DatabricksSession.builder.clusterId(constants.CLUSTER_ID).getOrCreate()
-spark = DatabricksSession.builder.serverless(True).getOrCreate()
+spark = DatabricksSession.builder.clusterId(constants.CLUSTER_ID).getOrCreate()
+# spark = DatabricksSession.builder.serverless(True).getOrCreate()
 import altair as alt
 
 

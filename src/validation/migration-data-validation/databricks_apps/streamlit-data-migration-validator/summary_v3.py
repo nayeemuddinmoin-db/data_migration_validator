@@ -23,8 +23,8 @@ from streamlit_dynamic_filters import DynamicFilters
 
 st.header("Validation Summary", divider=True)
 
-# spark = DatabricksSession.builder.clusterId(constants.CLUSTER_ID).getOrCreate()
-spark = DatabricksSession.builder.serverless(True).getOrCreate()
+spark = DatabricksSession.builder.clusterId(constants.CLUSTER_ID).getOrCreate()
+# spark = DatabricksSession.builder.serverless(True).getOrCreate()
 
 
 

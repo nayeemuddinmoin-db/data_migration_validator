@@ -21,8 +21,8 @@ st.header("Validation Configuration", divider=True)
 
 st.caption("The following features the Embedded Delta Table Editors enabling the editing of the underlying Delta tables housing these configurations.")
 
-# spark = DatabricksSession.builder.clusterId(constants.CLUSTER_ID).getOrCreate()
-spark = DatabricksSession.builder.serverless(True).getOrCreate()
+spark = DatabricksSession.builder.clusterId(constants.CLUSTER_ID).getOrCreate()
+# spark = DatabricksSession.builder.serverless(True).getOrCreate()
 
 
 tab1, tab2  = st.tabs(["Validation Mapping Table", "Table Config"])

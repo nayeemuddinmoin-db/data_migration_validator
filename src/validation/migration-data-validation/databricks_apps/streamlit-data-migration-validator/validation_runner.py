@@ -68,11 +68,11 @@ with tab1:
     st.caption("The following table shows the validation runs that have been triggered with their current status. Please select the workflow and table family to trigger a new validation run. Please note that the table families are not necessarily the same as the table names in the data lake.")
 
     # st.write(datetime.now(), "StartedGetOrCreateSparkSession")
-    # spark = DatabricksSession.builder.clusterId(constants.CLUSTER_ID).getOrCreate()
+    spark = DatabricksSession.builder.clusterId(constants.CLUSTER_ID).getOrCreate()
     # st.write(datetime.now(), "CompletedGetOrCreateSparkSession")
     # spark = SparkSession.getActiveSession()
     # spark = DatabricksSession.builder.clusterId("dummy").validateSession(False).getOrCreate()
-    spark = DatabricksSession.builder.serverless(True).getOrCreate()
+    # spark = DatabricksSession.builder.serverless(True).getOrCreate()
 
     dbutils = DBUtils(spark)
 

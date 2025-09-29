@@ -13,6 +13,7 @@ JOB_RUN_AS_USER = "rahul.singha@databricks.com" # App ID in case of SPN "5087f00
 APP_CLUSTER_ID = "0927-122932-wl2072gn" # APP CLUSTER ID
 JOB_CLUSTER_ID = None
 JOB_ID = 919069293546107  # Validation Workflow
+EXTERNAL_LOCATIONS = None
 
 # COMMAND ----------
 

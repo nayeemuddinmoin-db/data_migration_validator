@@ -925,7 +925,7 @@ def getHashAnomalies(src_hash_validation_tbl, tgt_hash_validation_tbl, primary_k
 
 # COMMAND ----------
 
-def generate_sql_override_for_hash_anomalies(table, sql_override, pk_columns, anomalies_hash_in_clause):
+def generate_sql_override_for_hash_anomalies(table, sql_override, pk_columns, anomalies_hash_in_clause, src_path=None):
   table = sql_override.format(**locals()) if sql_override else f"select * from {table}"
   
   # Handle case where pk_columns is empty (for hash-based validation without primary keys)
@@ -937,8 +937,11 @@ def generate_sql_override_for_hash_anomalies(table, sql_override, pk_columns, an
     # For hash-based validation without primary keys, we can't filter by primary keys
     # Instead, we'll use a different approach or return the full table
     condition = "FALSE"  # This will effectively return no rows, which might be the intended behavior
-    
-  new_sql_override = f"""SELECT * from ({table})t where {condition}"""
+
+  if src_path is None:
+    new_sql_override = f"""SELECT * from ({table})t where {condition}"""
+  else:
+    new_sql_override = condition
 #   print(new_sql_override)
   return new_sql_override
 
@@ -1778,7 +1781,7 @@ def trigger_validation(table_mapping):
     ).collect()
     ]
 
-  logger.info(f"Source Files: {src_path}")
+#   logger.info(f"Source Files: {src_path}")
   base_file_path = None
   partition_columns = spark.sql(f"""select partition_column from {INGESTION_CONFIG_TABLE}
                              where concat_ws('.',target_catalog, target_schema, target_table) = '{tgt_table}'""")
@@ -1840,7 +1843,7 @@ def trigger_validation(table_mapping):
         src_hash_validation_tbl, tgt_hash_validation_tbl, tgt_primary_keys, col_mapping, workflow_name, table_family)
         src_pk_columns = generate_src_columns(tgt_primary_keys, col_mapping)
         tgt_pk_columns = ",".join(tgt_primary_keys)
-        src_sql_override = generate_sql_override_for_hash_anomalies(src_table, src_sql_override, src_pk_columns, src_anomalies_hash_in_clause)
+        src_sql_override = generate_sql_override_for_hash_anomalies(src_table, src_sql_override, src_pk_columns, src_anomalies_hash_in_clause, src_path)
         tgt_sql_override = generate_sql_override_for_hash_anomalies(tgt_table, tgt_sql_override, tgt_pk_columns, tgt_anomalies_hash_in_clause)
         log_update("HASH_ANOMALIES_COMPLETED")
         
