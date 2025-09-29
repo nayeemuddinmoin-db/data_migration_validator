@@ -156,7 +156,7 @@ def processDatabricksColNames(table, col_mapping, primary_keys_string, mismatch_
 
 # COMMAND ----------
 
-def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fields, sql_override, data_load_filter, table_mapping, path=None, src_path_part_params=None):
+def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fields, sql_override, data_load_filter, table_mapping, path=None, src_path_part_params=None, batch_load_ids=None):
 
   col_mapping = table_mapping.col_mapping
   cm = col_mapping
@@ -164,11 +164,12 @@ def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fiel
 
   if path is None:
 
-    batch_load_id = spark.sql(f"""select max(batch_load_id) as max_batch_load_id
-              from {INGESTION_AUDIT_TABLE}
-              where status = 'COMPLETED'
-                and target_table_name = '{table}'""").first()[0]
-    batch_load_id_filter = f" AND _aud_batch_load_id IN ({batch_load_id})"
+    # batch_load_id = spark.sql(f"""select max(batch_load_id) as max_batch_load_id
+    #           from {INGESTION_AUDIT_TABLE}
+    #           where status = 'COMPLETED'
+    #             and target_table_name = '{table}'""").first()[0]
+
+    batch_load_id_filter = f" AND _aud_batch_load_id IN ({', '.join([repr(id) for id in batch_load_ids])})"
     logger.info(f"batch_load_id_filter: {batch_load_id_filter}")
 
     read_sql = sql_override if (not sql_override is None) else f"select * from {table}"
@@ -222,15 +223,15 @@ def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fiel
 # COMMAND ----------
 
 from pyspark.sql.types import StringType    
-def captureDatabricksTable(table, sql_override, data_load_filter, src_cast_to_string,path=None,src_path_part_params=None):
+def captureDatabricksTable(table, sql_override, data_load_filter, src_cast_to_string,path=None,src_path_part_params=None,batch_load_ids=None):
     load_filter = data_load_filter if (not data_load_filter is None) else "1=1"
     read_sql = sql_override if (not sql_override is None) else f"select * from {table}"
     if path is None:
-        batch_load_id = spark.sql(f"""select max(batch_load_id) as max_batch_load_id
-              from {INGESTION_AUDIT_TABLE}
-              where status = 'COMPLETED'
-                and target_table_name = '{table}'""").first()[0]
-        batch_load_id_filter = f" AND _aud_batch_load_id IN ({batch_load_id})"
+        # batch_load_id = spark.sql(f"""select max(batch_load_id) as max_batch_load_id
+        #       from {INGESTION_AUDIT_TABLE}
+        #       where status = 'COMPLETED'
+        #         and target_table_name = '{table}'""").first()[0]
+        batch_load_id_filter = f" AND _aud_batch_load_id IN ({', '.join([repr(id) for id in batch_load_ids])})"
 
         logger.info(f"batch_load_id_filter: {batch_load_id_filter}")
 
