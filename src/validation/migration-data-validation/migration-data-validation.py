@@ -1299,12 +1299,12 @@ def windowed_validation(
     tgt_extras_sql = f"select * from (select tgt.* from {tgt_tbl} tgt LEFT ANTI JOIN {src_tbl} src ON {join_condition}) where ({filter})"
 
     print("*tgt_extras_sql**")
-    spark.sql(tgt_extras_sql).show()
+    # spark.sql(tgt_extras_sql).show()
 
     src_extras_sql = f"select * from(select src.* from {src_tbl} src LEFT ANTI JOIN {tgt_tbl} tgt ON ({join_condition})) where ({filter})"
 
     print("*src_extras_sql**")
-    spark.sql(src_extras_sql).show()
+    # spark.sql(src_extras_sql).show()
 
     tgt_mismatches_sql = f"""
   (with x as (select * from (select tgt.* from {tgt_tbl} tgt Inner Join {src_tbl} src ON ({join_condition})) where ({filter})),
@@ -1317,7 +1317,7 @@ def windowed_validation(
   )"""
     
     print("*tgt_mismatches_sql**")
-    spark.sql(tgt_mismatches_sql).show()
+    # spark.sql(tgt_mismatches_sql).show()
 
     src_mismatches_sql = f"""
   (with x as (select * from (select tgt.* from {tgt_tbl} tgt Inner Join {src_tbl} src ON ({join_condition})) where ({filter})),
@@ -1330,7 +1330,7 @@ def windowed_validation(
   )"""
     
     print("*src_mismatches_sql**")
-    spark.sql(src_mismatches_sql).show()
+    # spark.sql(src_mismatches_sql).show()
 
     insert_anomalies = f"""select * from (
   select "tgt_extras" as type, *, "{iteration_name}" as iteration_name, "{workflow_name}" as workflow_name, "{table_family}" as table_family from ({tgt_extras_sql}) union 
@@ -1342,7 +1342,7 @@ def windowed_validation(
     
     print("**insert_anomalies**",insert_anomalies)
 
-    spark.sql(insert_anomalies).show()
+    # spark.sql(insert_anomalies).show()
 
     if spark.catalog.tableExists(anomalies_table_name):
         print(
@@ -1591,12 +1591,13 @@ def create_normailzed_views(
 
 # COMMAND ----------
 
-def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_validation_tbl, src_hash_validation_tbl, tgt_hash_validation_tbl):
+def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_validation_tbl, src_hash_validation_tbl, tgt_hash_validation_tbl, batch_load_id=None):
 
   metrics = {}
   metrics['iteration_name'] = iteration_name
   metrics['streamlit_user_name'] = streamlit_user_name
   metrics['streamlit_user_email'] = streamlit_user_email
+  metrics['batch_load_id'] = batch_load_id
   metrics['workflow_name'] = workflow_name = table_mapping.workflow_name
   metrics['table_family'] = table_family = table_mapping.table_family
   metrics['src_wrhse'] = table_mapping.src_warehouse
@@ -1677,7 +1678,15 @@ def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_valid
 
 def purge_tables(retain_tables_list,src_validation_tbl,tgt_validation_tbl,full_outer_table):
     logger.info(f"retain_tables_list: {retain_tables_list}")
-    retain_list = [] if retain_tables_list is None else retain_tables_list.split("|")
+    
+    # Handle both list and string inputs for retain_tables_list
+    if retain_tables_list is None:
+        retain_list = []
+    elif isinstance(retain_tables_list, list):
+        retain_list = retain_tables_list  # Already a list
+    else:
+        retain_list = retain_tables_list.split("|")  # String input
+        
     logger.info(f"Retain Table List: {retain_list}")
     if "src_tbl" not in retain_list: 
         logger.info(f'DROPPING table {src_validation_tbl}')
@@ -1756,191 +1765,224 @@ def trigger_validation(table_mapping):
       AND src_table = '{src_table}'
       AND tgt_warehouse = '{tgt_warehouse}'
       AND tgt_table = '{tgt_table}'
-      AND table_family = '{table_family}'""")
+      AND table_family = '{table_family}'
+      AND batch_load_id = '{batch_load_id}'""")
 
-  # Get source path information (needed for both validation strategies)
-  src_path = [
-    row['source_file_path']
-    for row in spark.sql(f"""
-        select t1.source_file_path
-        from {INGESTION_METADATA_TABLE} t1
-        inner join {INGESTION_AUDIT_TABLE} t2
-            on (t1.table_name = t2.target_table_name and t1.batch_load_id = t2.batch_load_id)
-        where t2.status = 'COMPLETED'
-          and table_name = '{tgt_table}'
-          and t2.batch_load_id = (
-              select max(batch_load_id) as max_batch_load_id
-              from {INGESTION_AUDIT_TABLE}
-              where status = 'COMPLETED'
-                and target_table_name = '{tgt_table}'
-          )
-        """
-    ).collect()
-    ]
+  # Get source path information and batch_load_id (modified to handle multiple batches)
+  ingestion_data = spark.sql(f"""
+    select
+        t1.source_file_path,
+        t2.batch_load_id,
+        t4.write_mode
+    from {INGESTION_METADATA_TABLE} t1
+    inner join {INGESTION_AUDIT_TABLE} t2
+        on (t1.table_name = t2.target_table_name and t1.batch_load_id = t2.batch_load_id)
+    inner join {INGESTION_CONFIG_TABLE} t4
+        on t1.table_name = concat_ws('.', t4.target_catalog, t4.target_schema, t4.target_table)
+    left join {VALIDATION_LOG_TABLE} t3
+        on t3.batch_load_id = t2.batch_load_id
+    where t2.status = 'COMPLETED'
+        and t1.table_name = '{tgt_table}'
+        and (
+            (t4.write_mode = 'overwrite' and t2.batch_load_id = (
+                select max(batch_load_id)
+                from {INGESTION_AUDIT_TABLE}
+                where status = 'COMPLETED'
+                    and target_table_name = '{tgt_table}'
+            ))
+            or t4.write_mode <> 'overwrite'
+        )
+        and (t3.validation_run_status <> 'SUMMARY_SUCCESS'
+            or t3.batch_load_id is null)
+    """).collect()
 
-  logger.info(f"Source Files: {src_path}")
-  base_file_path = None
-  partition_columns = spark.sql(f"""select partition_column from {INGESTION_CONFIG_TABLE}
-                             where concat_ws('.',target_catalog, target_schema, target_table) = '{tgt_table}'""")
-  partition_columns = partition_columns.first()['partition_column'].split(',')
-  logger.info(f"source partition columns: {partition_columns}")
-  
-  d_partition_col_datatype_mapping_df = spark.sql(f"""select partition_column_name,datatype from {INGESTION_SRC_TABLE_PARTITION_MAPPING} where concat_ws('.',schema_name, table_name) = '{src_table.replace('source_system.','')}' order by index""")
+  # Handle multiple batches
+  if not ingestion_data:
+      logger.warning(f"No batches found for validation for table: {tgt_table}")
+      return
 
-  d_partition_col_datatype_mapping = {row['partition_column_name']: row['datatype'] for row in d_partition_col_datatype_mapping_df.collect()}
-  logger.info(f"source partition col datatype: {d_partition_col_datatype_mapping}")
-
-  src_path_part_params = {"partition_columns": partition_columns, "base_file_path": base_file_path, "d_partition_col_datatype_mapping": d_partition_col_datatype_mapping}
-  logger.info(f"src_path_part_params: {src_path_part_params}")
-
-  # Capture source and target schemas (needed for both validation strategies)
-  log_update("SRC_SCHEMA_INITIATED")
-  logger.info("capturing source schema")
-  captureSrcSchema(src_warehouse, src_table, src_jdbc_options, table_mapping, src_path, src_path_part_params)
-  log_update("TGT_SCHEMA_INITIATED")
-  logger.info("capturing target schema")
-  captureTgtSchema(tgt_warehouse, tgt_table, tgt_jdbc_options, table_mapping)
-
-  # Check validation strategy based on primary key availability
-  validation_strategy = table_mapping.validation_strategy
-  logger.info(f"validation_strategy: {validation_strategy}")
-  
-  if validation_strategy == "hash_based":
-    logger.info(f"Running hash-based validation for {table_family}")
-    return run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_path, src_path_part_params)
-  else:
-    logger.info(f"Running primary key-based validation for {table_family}")
-    # Continue with existing primary key-based validation flow
-
-  try:
+  # Process each batch that needs validation
+  for batch_data in ingestion_data:
+      batch_load_id = batch_data['batch_load_id']
+      write_mode = batch_data['write_mode']
       
-    logger.info(f"""Triggering Validation Run for Workflow: ", {workflow_name}, Table Family: {table_family})""")
-    logger.info(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
-    spark.sql(f"INSERT INTO {validation_log_table} (workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ('{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
-    
-    src_hash_validation_tbl = None
-    tgt_hash_validation_tbl = None
-    
-    if quick_validation:
-        logger.info("capturing source snapshot hash")
-        log_update("SRC_SNAPSHOT_HASH_INITIATED")
-        src_hash_validation_tbl = captureSrcTableHash(
-        src_warehouse, src_table, src_jdbc_options, src_sql_override, src_data_load_filter, table_mapping, src_path, src_path_part_params)
-        log_update("SRC_SNAPSHOT_HASH_COMPLETED")
+      logger.info(f"Processing batch_load_id: {batch_load_id} with write_mode: {write_mode}")
+      
+      # Get source paths for this specific batch
+      batch_src_paths = spark.sql(f"""
+          select source_file_path
+          from {INGESTION_METADATA_TABLE}
+          where table_name = '{tgt_table}'
+              and batch_load_id = '{batch_load_id}'
+          """).collect()
+      
+      src_path = [row['source_file_path'] for row in batch_src_paths]
+    #   logger.info(f"Source Files for batch {batch_load_id}: {src_path}")
+      
+      # Continue with existing validation logic for this batch
+    #   logger.info(f"Source Files: {src_path}")
+      base_file_path = None
+      partition_columns = spark.sql(f"""select partition_column from {INGESTION_CONFIG_TABLE}
+                                 where concat_ws('.',target_catalog, target_schema, target_table) = '{tgt_table}'""")
+      partition_columns = partition_columns.first()['partition_column'].split(',')
+      logger.info(f"source partition columns: {partition_columns}")
+      
+      d_partition_col_datatype_mapping_df = spark.sql(f"""select partition_column_name,datatype from {INGESTION_SRC_TABLE_PARTITION_MAPPING} where concat_ws('.',schema_name, table_name) = '{src_table.replace('source_system.','')}' order by index""")
 
-        logger.info("capturing target snapshot hash")
-        log_update("TGT_SNAPSHOT_HASH_INITIATED")
-        tgt_hash_validation_tbl = captureTgtTableHash(
-        tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping)
-        log_update("TGT_SNAPSHOT_HASH_COMPLETED")
+      d_partition_col_datatype_mapping = {row['partition_column_name']: row['datatype'] for row in d_partition_col_datatype_mapping_df.collect()}
+      logger.info(f"source partition col datatype: {d_partition_col_datatype_mapping}")
 
-        logger.info("capturing hash anomalies")
-        log_update("HASH_ANOMALIES_CAPTURE")
-        src_anomalies_hash_in_clause, tgt_anomalies_hash_in_clause = getHashAnomalies(
-        src_hash_validation_tbl, tgt_hash_validation_tbl, tgt_primary_keys, col_mapping, workflow_name, table_family)
-        src_pk_columns = generate_src_columns(tgt_primary_keys, col_mapping)
-        tgt_pk_columns = ",".join(tgt_primary_keys)
-        src_sql_override = generate_sql_override_for_hash_anomalies(src_table, src_sql_override, src_pk_columns, src_anomalies_hash_in_clause)
-        tgt_sql_override = generate_sql_override_for_hash_anomalies(tgt_table, tgt_sql_override, tgt_pk_columns, tgt_anomalies_hash_in_clause)
-        log_update("HASH_ANOMALIES_COMPLETED")
+      src_path_part_params = {"partition_columns": partition_columns, "base_file_path": base_file_path, "d_partition_col_datatype_mapping": d_partition_col_datatype_mapping}
+      logger.info(f"src_path_part_params: {src_path_part_params}")
+
+      # Capture source and target schemas (needed for both validation strategies)
+      log_update("SRC_SCHEMA_INITIATED")
+      logger.info("capturing source schema")
+      captureSrcSchema(src_warehouse, src_table, src_jdbc_options, table_mapping, src_path, src_path_part_params)
+      log_update("TGT_SCHEMA_INITIATED")
+      logger.info("capturing target schema")
+      captureTgtSchema(tgt_warehouse, tgt_table, tgt_jdbc_options, table_mapping)
+
+      # Check validation strategy based on primary key availability
+      validation_strategy = table_mapping.validation_strategy
+      logger.info(f"validation_strategy: {validation_strategy}")
+      
+      if validation_strategy == "hash_based":
+        logger.info(f"Running hash-based validation for {table_family}")
+        return run_hash_based_validation(table_mapping, run_timestamp, iteration_name, batch_load_id, src_path, src_path_part_params)
+      else:
+        logger.info(f"Running primary key-based validation for {table_family}")
+        # Continue with existing primary key-based validation flow
+
+      try:
+          
+        logger.info(f"""Triggering Validation Run for Workflow: ", {workflow_name}, Table Family: {table_family})""")
+        logger.info(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
+        spark.sql(f"INSERT INTO {validation_log_table} (batch_load_id, workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ('{batch_load_id}', '{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
         
-    logger.info("capturing source snapshot")
-    log_update("SRC_SNAPSHOT_INITIATED")
-    src_validation_tbl = captureSrcTable(
-        src_warehouse, src_table, src_jdbc_options, src_sql_override, src_data_load_filter, table_mapping,src_path,src_path_part_params)
-    log_update("SRC_SNAPSHOT_COMPLETED")
+        src_hash_validation_tbl = None
+        tgt_hash_validation_tbl = None
+        
+        if quick_validation:
+            logger.info("capturing source snapshot hash")
+            log_update("SRC_SNAPSHOT_HASH_INITIATED")
+            src_hash_validation_tbl = captureSrcTableHash(
+            src_warehouse, src_table, src_jdbc_options, src_sql_override, src_data_load_filter, table_mapping, src_path, src_path_part_params)
+            log_update("SRC_SNAPSHOT_HASH_COMPLETED")
 
-    logger.info("capturing target snapshot")
-    log_update("TGT_SNAPSHOT_INITIATED")
-    tgt_validation_tbl = captureTgtTable(
-        tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping)
-    log_update("TGT_SNAPSHOT_COMPLETED")
+            logger.info("capturing target snapshot hash")
+            log_update("TGT_SNAPSHOT_HASH_INITIATED")
+            tgt_hash_validation_tbl = captureTgtTableHash(
+            tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping)
+            log_update("TGT_SNAPSHOT_HASH_COMPLETED")
 
-    logger.info("creating normalized view")
-    log_update("NORM_VIEW_INITIATED")
-    src_validation_view, tgt_validation_view, missing_src_cols, missing_tgt_cols = create_normailzed_views(
-        src_validation_tbl, tgt_validation_tbl, col_mapping, iteration_name
-    )
-    log_update("NORM_VIEW_COMPLETED")
+            logger.info("capturing hash anomalies")
+            log_update("HASH_ANOMALIES_CAPTURE")
+            src_anomalies_hash_in_clause, tgt_anomalies_hash_in_clause = getHashAnomalies(
+            src_hash_validation_tbl, tgt_hash_validation_tbl, tgt_primary_keys, col_mapping, workflow_name, table_family)
+            src_pk_columns = generate_src_columns(tgt_primary_keys, col_mapping)
+            tgt_pk_columns = ",".join(tgt_primary_keys)
+            src_sql_override = generate_sql_override_for_hash_anomalies(src_table, src_sql_override, src_pk_columns, src_anomalies_hash_in_clause)
+            tgt_sql_override = generate_sql_override_for_hash_anomalies(tgt_table, tgt_sql_override, tgt_pk_columns, tgt_anomalies_hash_in_clause)
+            log_update("HASH_ANOMALIES_COMPLETED")
+            
+        logger.info("capturing source snapshot")
+        log_update("SRC_SNAPSHOT_INITIATED")
+        src_validation_tbl = captureSrcTable(
+            src_warehouse, src_table, src_jdbc_options, src_sql_override, src_data_load_filter, table_mapping,src_path,src_path_part_params)
+        log_update("SRC_SNAPSHOT_COMPLETED")
 
-    # Only run primary key validation for primary key-based strategy
-    if table_mapping.validation_strategy != "hash_based":
-        log_update("PK_VALIDATION_INITIATED")
-        primary_key_validation(
+        logger.info("capturing target snapshot")
+        log_update("TGT_SNAPSHOT_INITIATED")
+        tgt_validation_tbl = captureTgtTable(
+            tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping)
+        log_update("TGT_SNAPSHOT_COMPLETED")
+
+        logger.info("creating normalized views")
+        log_update("NORM_VIEW_INITIATED")
+        src_validation_view, tgt_validation_view, missing_src_cols, missing_tgt_cols = create_normailzed_views(
+            src_validation_tbl, tgt_validation_tbl, col_mapping, iteration_name
+        )
+        log_update("NORM_VIEW_COMPLETED")
+
+        # Only run primary key validation for primary key-based strategy
+        if table_mapping.validation_strategy != "hash_based":
+            log_update("PK_VALIDATION_INITIATED")
+            primary_key_validation(
+                src_validation_view,
+                tgt_validation_view,
+                table_mapping,
+                run_timestamp,
+                iteration_name,
+            )
+            log_update("PK_VALIDATION_COMPLETED")
+        else:
+            print("Skipping primary key validation for hash-based validation strategy")
+            log_update("PK_VALIDATION_SKIPPED_FOR_HASH_BASED")
+
+        logger.info("data mismatch validation")
+        log_update("MISMATCH_VALIDATION_INITIATED")
+        full_outer_table = generate_validation_results(
+            src_validation_view,
+            tgt_validation_view,
+            table_mapping,
+            run_timestamp,
+            iteration_name,
+            missing_src_cols, 
+            missing_tgt_cols
+        )
+        log_update("MISMATCH_VALIDATION_COMPLETED")
+        
+        logger.info("window based data mismatch validation")
+        log_update("WINDOWED_VALIDATION_INITIATED")
+        windowed_validation(
             src_validation_view,
             tgt_validation_view,
             table_mapping,
             run_timestamp,
             iteration_name,
         )
-        log_update("PK_VALIDATION_COMPLETED")
-    else:
-        print("Skipping primary key validation for hash-based validation strategy")
-        log_update("PK_VALIDATION_SKIPPED_FOR_HASH_BASED")
+        log_update("WINDOWED_VALIDATION_COMPLETED")
 
-    logger.info("data mismatch validation")
-    log_update("MISMATCH_VALIDATION_INITIATED")
-    full_outer_table = generate_validation_results(
-        src_validation_view,
-        tgt_validation_view,
-        table_mapping,
-        run_timestamp,
-        iteration_name,
-        missing_src_cols, 
-        missing_tgt_cols
-    )
-    log_update("MISMATCH_VALIDATION_COMPLETED")
-    
-    logger.info("window based data mismatch validation")
-    log_update("WINDOWED_VALIDATION_INITIATED")
-    windowed_validation(
-        src_validation_view,
-        tgt_validation_view,
-        table_mapping,
-        run_timestamp,
-        iteration_name,
-    )
-    log_update("WINDOWED_VALIDATION_COMPLETED")
+        retain_tables_list = [src_validation_tbl, tgt_validation_tbl]
 
-    logger.info("capturing metrics")
-    log_update("METRICS_CAPTURE_INITIATED")
-    table_metrics = capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_validation_tbl, src_hash_validation_tbl, tgt_hash_validation_tbl)
-    log_update("METRICS_CAPTURE_COMPLETED")
+        logger.info("capturing metrics")
+        log_update("METRICS_CAPTURE_INITIATED")
+        table_metrics = capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_validation_tbl, src_hash_validation_tbl, tgt_hash_validation_tbl, batch_load_id)
+        log_update("METRICS_CAPTURE_COMPLETED")
 
-    logger.info("purging temp tables")
-    log_update("PURGE_TABLES_INITIATED")
-    purge_tables(retain_tables_list,src_validation_tbl,tgt_validation_tbl,full_outer_table)
-    log_update("PURGE_TABLES_COMPLETED")
-        
-    logger.info(f"""Completed Validation Run for Workflow: {workflow_name}; Table Family: {table_family})""")
-    log_update("RUN_SUCCESS")
-
-    log_update("SUMMARY_INITIATED")
-    runner(table_metrics)
-    logger.info(f"""Completed Validation Summary for Workflow: {workflow_name}; Table Family: {table_family})""")
-    log_update("SUMMARY_SUCCESS")
-
-  except Exception as exc:
-    logger.error(f'Catch inside trigger_validation: {exc}')
-    exc= str(exc).replace("'", "\\'")
-    spark.sql(f"""
-    UPDATE {validation_log_table}
-      SET
-      validation_run_status = 'FAILED',
-      validation_run_end_time = now(),
-      exception = '{exc}'
-      WHERE iteration_name = '{iteration_name}'
-      AND workflow_name ='{workflow_name}'
-      AND src_warehouse = '{src_warehouse}' 
-      AND src_table = '{src_table}'
-      AND tgt_warehouse = '{tgt_warehouse}'
-      AND tgt_table = '{tgt_table}'
-      AND table_family = '{table_family}'""")
-
-    raise exc
-    
-    
+        logger.info("purging temp tables")
+        log_update("PURGE_TABLES_INITIATED")
+        purge_tables(retain_tables_list,src_validation_tbl,tgt_validation_tbl,full_outer_table)
+        log_update("PURGE_TABLES_COMPLETED")
             
+        logger.info(f"""Completed Validation Run for Workflow: {workflow_name}; Table Family: {table_family})""")
+        log_update("RUN_SUCCESS")
+
+        log_update("SUMMARY_INITIATED")
+        runner(table_metrics)
+        logger.info(f"""Completed Validation Summary for Workflow: {workflow_name}; Table Family: {table_family})""")
+        log_update("SUMMARY_SUCCESS")
+
+      except Exception as exc:
+        logger.error(f'Catch inside trigger_validation: {exc}')
+        exc= str(exc).replace("'", "\\'")
+        spark.sql(f"""
+        UPDATE {validation_log_table}
+          SET
+          validation_run_status = 'FAILED',
+          validation_run_end_time = now(),
+          exception = '{exc}'
+          WHERE iteration_name = '{iteration_name}'
+          AND workflow_name ='{workflow_name}'
+          AND src_warehouse = '{src_warehouse}' 
+          AND src_table = '{src_table}'
+          AND tgt_warehouse = '{tgt_warehouse}'
+          AND tgt_table = '{tgt_table}'
+          AND table_family = '{table_family}'
+          AND batch_load_id = '{batch_load_id}'""")
+
+        raise exc
 
 # COMMAND ----------
 
@@ -1956,7 +1998,7 @@ else :
 
 # COMMAND ----------
 
-def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_path=None, src_path_part_params=None):
+def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, batch_load_id, src_path=None, src_path_part_params=None):
     """
     Hash-based validation flow for tables without primary keys
     Always runs quick validation since full validation is designed for primary key-based validation
@@ -1964,6 +2006,9 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_
         table_mapping: TableMapping object
         run_timestamp: Run timestamp
         iteration_name: Iteration name
+        batch_load_id: Batch load identifier for audit logging
+        src_path: Source file paths (optional)
+        src_path_part_params: Source path partition parameters (optional)
     Returns:
         Validation results
     """
@@ -1990,19 +2035,20 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_
           AND src_table = '{src_table}'
           AND tgt_warehouse = '{tgt_warehouse}'
           AND tgt_table = '{tgt_table}'
-          AND table_family = '{table_family}'""")
+          AND table_family = '{table_family}'
+          AND batch_load_id = '{batch_load_id}'""")
     
     try:
         print(f"Running hash-based validation for {table_family}")
         print(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
         
         # Insert initial validation log entry
-        spark.sql(f"INSERT INTO {validation_log_table} (workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ('{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
+        spark.sql(f"INSERT INTO {validation_log_table} (batch_load_id, workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ('{batch_load_id}', '{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
         
         log_update("HASH_VALIDATION_INITIATED")
         
         # Use source path information passed from trigger_validation
-        logger.info(f"Source Files: {src_path}")
+        # logger.info(f"Source Files: {src_path}")
         logger.info(f"src_path_part_params: {src_path_part_params}")
         
         # 1. Get table columns for hash validation
@@ -2078,7 +2124,8 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_
           AND src_table = '{src_table}'
           AND tgt_warehouse = '{tgt_warehouse}'
           AND tgt_table = '{tgt_table}'
-          AND table_family = '{table_family}'""")
+          AND table_family = '{table_family}'
+          AND batch_load_id = '{batch_load_id}'""")
         
         raise exc
 

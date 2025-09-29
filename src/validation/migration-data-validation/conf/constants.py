@@ -9,7 +9,6 @@
 # COMMAND ----------
 
 PARALLELISM = 30
-# INGESTION_METADATA_TABLE = "cat_ril_nayeem_01.rildb01.source_file_metadata"
 INGESTION_METADATA_TABLE = "ts42_demo.migration_operations.serving_ingestion_metadata"
 INGESTION_AUDIT_TABLE = "ts42_demo.migration_operations.serving_ingestion_audit"
 INGESTION_CONFIG_TABLE = "ts42_demo.migration_operations.serving_ingestion_config"

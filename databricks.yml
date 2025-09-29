@@ -13,7 +13,7 @@ targets:
     resources:
       apps:
         data_migration_validator_app:
-          name: "data_migration_validator_app_dev"
+          name: "data_migration_validator_app_dev_kush"
   prod:
     mode: production
     workspace:

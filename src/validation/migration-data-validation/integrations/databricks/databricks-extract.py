@@ -8,6 +8,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run "../../conf/constants"
+
+# COMMAND ----------
+
 from pyspark.sql.functions import lit, to_timestamp, coalesce,regexp_extract
 from typing import List, Dict, Any
 import re
@@ -81,7 +85,7 @@ def captureDatabricksSchema(tbl, path=None, src_path_part_params=None):
         )
 
     
-    print(f'{tbl}: {tbl_schema.show()}')
+    # print(f'{tbl}: {tbl_schema.show()}')
     tbl_schema.createOrReplaceTempView(f"tbl_schema_{tbl_name}")
     tbl_schema_with_row_num = spark.sql(
             f"""select '{catalog}' as catalog, '{db_name}' as db_name, '{tbl_name}' as table_name, original_order, col_name, data_type, comment from (SELECT
@@ -164,12 +168,46 @@ def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fiel
 
   if path is None:
 
-    batch_load_id = spark.sql(f"""select max(batch_load_id) as max_batch_load_id
-              from {INGESTION_AUDIT_TABLE}
-              where status = 'COMPLETED'
-                and target_table_name = '{table}'""").first()[0]
-    batch_load_id_filter = f" AND _aud_batch_load_id IN ({batch_load_id})"
+    # Enhanced batch selection logic aligned with main validation process
+    batch_selection_sql = f"""
+    select distinct t2.batch_load_id
+    from {INGESTION_METADATA_TABLE} t1
+    inner join {INGESTION_AUDIT_TABLE} t2
+        on (t1.table_name = t2.target_table_name and t1.batch_load_id = t2.batch_load_id)
+    inner join {INGESTION_CONFIG_TABLE} t4
+        on t1.table_name = concat_ws('.', t4.target_catalog, t4.target_schema, t4.target_table)
+    left join {VALIDATION_LOG_TABLE} t3
+        on t3.batch_load_id = t2.batch_load_id
+    where t2.status = 'COMPLETED'
+        and t1.table_name = '{table}'
+        and (
+            (t4.write_mode = 'overwrite' and t2.batch_load_id = (
+                select max(batch_load_id)
+                from {INGESTION_AUDIT_TABLE}
+                where status = 'COMPLETED'
+                    and target_table_name = '{table}'
+            ))
+            or t4.write_mode <> 'overwrite'
+        )
+        and (t3.validation_run_status <> 'SUMMARY_SUCCESS'
+            or t3.batch_load_id is null)
+    """
+    
+    batch_load_ids = [row.batch_load_id for row in spark.sql(batch_selection_sql).collect()]
+    
+    if not batch_load_ids:
+        logger.warning(f"No batches found for validation for table: {table}")
+        # Return empty dataframe with correct schema
+        from pyspark.sql.types import StructType, StructField, StringType
+        schema = StructType([
+            StructField("p_keys", StringType(), True),
+            StructField("row_hash", StringType(), True)
+        ])
+        return spark.createDataFrame([], schema)
+    
+    batch_load_id_filter = f" AND _aud_batch_load_id IN ({','.join(map(str, batch_load_ids))})"
     logger.info(f"batch_load_id_filter: {batch_load_id_filter}")
+    logger.info(f"Processing {len(batch_load_ids)} batch(es) for table {table}")
 
     read_sql = sql_override if (not sql_override is None) else f"select * from {table}"
 
@@ -215,7 +253,7 @@ def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fiel
     row_hash_expr
     )
   
-  df.show()
+#   df.show()
   return df
 
 
@@ -226,13 +264,41 @@ def captureDatabricksTable(table, sql_override, data_load_filter, src_cast_to_st
     load_filter = data_load_filter if (not data_load_filter is None) else "1=1"
     read_sql = sql_override if (not sql_override is None) else f"select * from {table}"
     if path is None:
-        batch_load_id = spark.sql(f"""select max(batch_load_id) as max_batch_load_id
-              from {INGESTION_AUDIT_TABLE}
-              where status = 'COMPLETED'
-                and target_table_name = '{table}'""").first()[0]
-        batch_load_id_filter = f" AND _aud_batch_load_id IN ({batch_load_id})"
-
+        # Enhanced batch selection logic aligned with main validation process
+        batch_selection_sql = f"""
+        select distinct t2.batch_load_id
+        from {INGESTION_METADATA_TABLE} t1
+        inner join {INGESTION_AUDIT_TABLE} t2
+            on (t1.table_name = t2.target_table_name and t1.batch_load_id = t2.batch_load_id)
+        inner join {INGESTION_CONFIG_TABLE} t4
+            on t1.table_name = concat_ws('.', t4.target_catalog, t4.target_schema, t4.target_table)
+        left join {VALIDATION_LOG_TABLE} t3
+            on t3.batch_load_id = t2.batch_load_id
+        where t2.status = 'COMPLETED'
+            and t1.table_name = '{table}'
+            and (
+                (t4.write_mode = 'overwrite' and t2.batch_load_id = (
+                    select max(batch_load_id)
+                    from {INGESTION_AUDIT_TABLE}
+                    where status = 'COMPLETED'
+                        and target_table_name = '{table}'
+                ))
+                or t4.write_mode <> 'overwrite'
+            )
+            and (t3.validation_run_status <> 'SUMMARY_SUCCESS'
+                or t3.batch_load_id is null)
+        """
+        
+        batch_load_ids = [row.batch_load_id for row in spark.sql(batch_selection_sql).collect()]
+        
+        if not batch_load_ids:
+            logger.warning(f"No batches found for validation for table: {table}")
+            # Return empty dataframe
+            return spark.sql(f"SELECT * FROM {table} WHERE 1=0")
+        
+        batch_load_id_filter = f" AND _aud_batch_load_id IN ({','.join(map(str, batch_load_ids))})"
         logger.info(f"batch_load_id_filter: {batch_load_id_filter}")
+        logger.info(f"Processing {len(batch_load_ids)} batch(es) for table {table}")
 
         read_sql_compiled = f"SELECT a.* FROM ({read_sql.format(**locals())})a where {load_filter}{batch_load_id_filter}"
         print(f"{read_sql}\n{read_sql_compiled}")

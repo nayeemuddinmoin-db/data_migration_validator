@@ -143,6 +143,7 @@ spark.read.option("header","true")\
 
 spark.sql(f'''
 CREATE TABLE {VALIDATION_LOG_TABLE} (
+  batch_load_id STRING,
   src_warehouse STRING,
   src_table STRING,
   tgt_warehouse STRING,
@@ -160,6 +161,7 @@ CREATE TABLE {VALIDATION_LOG_TABLE} (
 
 spark.sql(f'''
 CREATE TABLE {VALIDATION_SUMMARY_TABLE} (
+  batch_load_id STRING,
   src_warehouse STRING,
   src_table STRING,
   tgt_warehouse STRING,

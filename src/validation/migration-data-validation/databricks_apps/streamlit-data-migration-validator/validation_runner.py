@@ -55,8 +55,6 @@ import os
 # st.write(user_info)
 
 
-st.error("This is the dev version. Demo version is available at [go/dmv](https://go/dmv)")
-
 
 st.header("Validation Runner", divider=True)
 tab1, tab2 = st.tabs(["Databricks Job Details", "Validation Job Run Status"])
