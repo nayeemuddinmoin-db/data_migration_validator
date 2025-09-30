@@ -1793,7 +1793,8 @@ def trigger_validation(table_mapping):
         on (t1.table_name = t2.target_table_name and t1.batch_load_id = t2.batch_load_id)
     inner join {INGESTION_CONFIG_TABLE} t4
         on t1.table_name = concat_ws('.', t4.target_catalog, t4.target_schema, t4.target_table)
-    left join {VALIDATION_LOG_TABLE} t3
+    left join (select batch_load_id,validation_run_status,row_number() over(partition by batch_load_id order by validation_run_start_time desc) rnk from (
+select explode(batch_load_id) as batch_load_id,validation_run_status,validation_run_start_time from {VALIDATION_LOG_TABLE})) t3
         on t3.batch_load_id = t2.batch_load_id
     where t2.status = 'COMPLETED'
         and t1.table_name = '{tgt_table}'
@@ -1806,7 +1807,7 @@ def trigger_validation(table_mapping):
             ))
             or t4.write_mode <> 'overwrite'
         )
-        and (t3.validation_run_status <> 'SUMMARY_SUCCESS'
+        and ((t3.validation_run_status <> 'SUMMARY_SUCCESS' AND t3.rnk = 1)
             or t3.batch_load_id is null)
     """).collect()
   
@@ -1846,22 +1847,30 @@ def trigger_validation(table_mapping):
   logger.info("capturing target schema")
   captureTgtSchema(tgt_warehouse, tgt_table, tgt_jdbc_options, table_mapping)
 
+  logger.info(f"""Triggering Validation Run for Workflow: ", {workflow_name}, Table Family: {table_family})""")
+  logger.info(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
+  batch_load_id_array = f"array({','.join([repr(x) for x in batch_load_ids])})"
+
   # Check validation strategy based on primary key availability
   validation_strategy = table_mapping.validation_strategy
   logger.info(f"validation_strategy: {validation_strategy}")
+
+  spark.sql(f"INSERT INTO {validation_log_table} (batch_load_id,workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ({batch_load_id_array},'{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
   
   if validation_strategy == "hash_based":
     logger.info(f"Running hash-based validation for {table_family}")
-    return run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_path, src_path_part_params)
+    return run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_path, src_path_part_params,batch_load_ids)
   else:
     logger.info(f"Running primary key-based validation for {table_family}")
     # Continue with existing primary key-based validation flow
 
   try:
       
-    logger.info(f"""Triggering Validation Run for Workflow: ", {workflow_name}, Table Family: {table_family})""")
-    logger.info(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
-    spark.sql(f"INSERT INTO {validation_log_table} (batch_load_id,workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ({batch_load_ids},'{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
+    # logger.info(f"""Triggering Validation Run for Workflow: ", {workflow_name}, Table Family: {table_family})""")
+    # logger.info(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
+    # batch_load_id_array = f"array({','.join([repr(x) for x in batch_load_ids])})"
+
+    # spark.sql(f"INSERT INTO {validation_log_table} (batch_load_id,workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ({batch_load_id_array},'{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
     
     src_hash_validation_tbl = None
     tgt_hash_validation_tbl = None
@@ -2038,16 +2047,16 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_
           AND table_family = '{table_family}'""")
     
     try:
-        print(f"Running hash-based validation for {table_family}")
-        print(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
+        # print(f"Running hash-based validation for {table_family}")
+        # print(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
         
-        # Insert initial validation log entry
-        spark.sql(f"INSERT INTO {validation_log_table} (batch_load_id, workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ({batch_load_ids},'{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
+        # # Insert initial validation log entry
+        # spark.sql(f"INSERT INTO {validation_log_table} (batch_load_id, workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ({batch_load_ids},'{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
         
         log_update("HASH_VALIDATION_INITIATED")
         
         # Use source path information passed from trigger_validation
-        logger.info(f"Source Files: {src_path}")
+        # logger.info(f"Source Files: {src_path}")
         logger.info(f"src_path_part_params: {src_path_part_params}")
         
         # 1. Get table columns for hash validation

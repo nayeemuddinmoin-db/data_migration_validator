@@ -181,7 +181,10 @@ def captureDatabricksTableHash(table, primary_keys_string, mismatch_exclude_fiel
     df_original = spark.read.format("orc").load(path)
     df = get_partitions(df_original, src_path_part_params.get("partition_columns"),src_path_part_params.get("base_file_path"),src_path_part_params.get("d_partition_col_datatype_mapping"))
 
-    read_sql_compiled = df.where(f"{load_filter}")
+    if sql_override is not None:
+      read_sql_compiled = df.where(f"{load_filter}").where(f"{sql_override}")
+    else:
+      read_sql_compiled = df.where(f"{load_filter}")
 
   col_list, col_cast_list = processDatabricksColNames(read_sql_compiled, col_mapping, primary_keys_string, mismatch_exclude_fields, path)
 
@@ -242,9 +245,10 @@ def captureDatabricksTable(table, sql_override, data_load_filter, src_cast_to_st
         # print("Captured Tgt Count=",df.count())
     else:
         print("Reading src from path op...")
+        print("sql_override", sql_override)
         df_original = spark.read.format("orc").load(path)
         df = get_partitions(df_original, src_path_part_params.get("partition_columns"),src_path_part_params.get("base_file_path"),src_path_part_params.get("d_partition_col_datatype_mapping"))
-        df = df.where(f"{load_filter}").where(f"{sql_override}")
+        df = df.where(f"{load_filter}")#.where(f"{sql_override}")
     # df = spark.read.table(table).filter(load_filter)
     to_str = df.columns
     if src_cast_to_string:
