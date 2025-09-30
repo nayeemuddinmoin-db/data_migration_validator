@@ -1,0 +1,13 @@
+__VOLUME_PATH__/toolz-1.0.0-py3-none-any.whl
+__VOLUME_PATH__/googleapis_common_protos-1.70.0-py3-none-any.whl
+__VOLUME_PATH__/grpcio_status-1.71.2-py3-none-any.whl
+__VOLUME_PATH__/grpcio-1.75.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+__VOLUME_PATH__/py4j-0.10.9.7-py2.py3-none-any.whl
+__VOLUME_PATH__/setuptools-80.9.0-py3-none-any.whl
+__VOLUME_PATH__/python_decouple-3.8-py3-none-any.whl
+__VOLUME_PATH__/streamlit-1.41.0-py2.py3-none-any.whl
+__VOLUME_PATH__/altair-5.0.0-py3-none-any.whl
+__VOLUME_PATH__/databricks_connect-15.4.0-py2.py3-none-any.whl
+__VOLUME_PATH__/streamlit_dynamic_filters-0.1.9-py3-none-any.whl
+__VOLUME_PATH__/streamlit_aggrid-1.1.8.post1-py3-none-any.whl
+__VOLUME_PATH__/st_pages-1.0.1-py3-none-any.whl

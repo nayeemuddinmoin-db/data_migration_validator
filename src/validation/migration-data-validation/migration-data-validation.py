@@ -530,14 +530,14 @@ def write_data(df_data, table):
 
 # COMMAND ----------
 
-def captureHashTable(warehouse, table, pk_columns, mismatch_exclude_fields, jdbc_options, sql_override, data_load_filter, table_mapping, path=None, src_path_part_params=None):
+def captureHashTable(warehouse, table, pk_columns, mismatch_exclude_fields, jdbc_options, sql_override, data_load_filter, table_mapping, path=None, src_path_part_params=None, batch_load_ids=None):
   validation_data_db =table_mapping.validation_data_db
   workflow_name = table_mapping.workflow_name
   match warehouse:
       # case "netezza":
       #     df_data = captureNetezzaTable(table, jdbc_options, data_load_filter, src_cast_to_string)
       case "databricks":
-          df_data = captureDatabricksTableHash(table, pk_columns, mismatch_exclude_fields, sql_override, data_load_filter, table_mapping, path, src_path_part_params)
+          df_data = captureDatabricksTableHash(table, pk_columns, mismatch_exclude_fields, sql_override, data_load_filter, table_mapping, path, src_path_part_params,batch_load_ids)
       # case "snowflake":
       #     df_data = captureSnowflakeTable(table, jdbc_options, data_load_filter, src_cast_to_string)
       # case "oracle":
@@ -556,7 +556,7 @@ def captureHashTable(warehouse, table, pk_columns, mismatch_exclude_fields, jdbc
 
 # COMMAND ----------
 
-def captureTable(warehouse, table, pk_columns, jdbc_options, sql_override, data_load_filter, table_mapping,path=None,src_path_part_params=None):
+def captureTable(warehouse, table, pk_columns, jdbc_options, sql_override, data_load_filter, table_mapping,path=None,src_path_part_params=None,batch_load_ids=None):
     src_cast_to_string = table_mapping.src_cast_to_string
     validation_data_db =table_mapping.validation_data_db
     workflow_name = table_mapping.workflow_name
@@ -564,7 +564,7 @@ def captureTable(warehouse, table, pk_columns, jdbc_options, sql_override, data_
         case "netezza":
             df_data = captureNetezzaTable(table, jdbc_options, data_load_filter, src_cast_to_string)
         case "databricks":
-            df_data = captureDatabricksTable(table, sql_override, data_load_filter, src_cast_to_string,path,src_path_part_params)
+            df_data = captureDatabricksTable(table, sql_override, data_load_filter, src_cast_to_string,path,src_path_part_params,batch_load_ids)
         case "snowflake":
             df_data = captureSnowflakeTable(table, jdbc_options, data_load_filter, src_cast_to_string)
         case "oracle":
@@ -692,7 +692,7 @@ def captureSrcTableHash(src_warehouse, src_table, src_jdbc_options, src_sql_over
 
 # COMMAND ----------
 
-def captureTgtTableHash(tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping):
+def captureTgtTableHash(tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping,batch_load_ids):
     print("Capturing Target Hash Contents:")
     
     # Handle case where primary keys are empty (for hash-based validation)
@@ -702,7 +702,7 @@ def captureTgtTableHash(tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_over
         tgt_pk_columns = ""  # Empty string for hash-based validation
     
     tgt_mismatch_exclude_fields = table_mapping.mismatch_exclude_fields
-    return captureHashTable(tgt_warehouse, tgt_table, tgt_pk_columns, tgt_mismatch_exclude_fields, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping)
+    return captureHashTable(tgt_warehouse, tgt_table, tgt_pk_columns, tgt_mismatch_exclude_fields, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping,batch_load_ids=batch_load_ids)
 
 # COMMAND ----------
 
@@ -714,10 +714,10 @@ def captureSrcTable(src_warehouse, src_table, src_jdbc_options, src_sql_override
 
 # COMMAND ----------
 
-def captureTgtTable(tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping):
+def captureTgtTable(tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping,batch_load_ids):
     logger.info("Capturing Target Contents:")
     tgt_pk_columns = table_mapping.tgt_primary_keys
-    return captureTable(tgt_warehouse, tgt_table, tgt_pk_columns, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping)
+    return captureTable(tgt_warehouse, tgt_table, tgt_pk_columns, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping,batch_load_ids=batch_load_ids)
 
 # COMMAND ----------
 
@@ -1594,12 +1594,13 @@ def create_normailzed_views(
 
 # COMMAND ----------
 
-def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_validation_tbl, src_hash_validation_tbl, tgt_hash_validation_tbl):
+def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_validation_tbl, src_hash_validation_tbl, tgt_hash_validation_tbl,batch_load_id=None):
 
   metrics = {}
   metrics['iteration_name'] = iteration_name
   metrics['streamlit_user_name'] = streamlit_user_name
   metrics['streamlit_user_email'] = streamlit_user_email
+  metrics['batch_load_id'] = batch_load_id
   metrics['workflow_name'] = workflow_name = table_mapping.workflow_name
   metrics['table_family'] = table_family = table_mapping.table_family
   metrics['src_wrhse'] = table_mapping.src_warehouse
@@ -1759,27 +1760,69 @@ def trigger_validation(table_mapping):
       AND src_table = '{src_table}'
       AND tgt_warehouse = '{tgt_warehouse}'
       AND tgt_table = '{tgt_table}'
-      AND table_family = '{table_family}'""")
+      AND table_family = '{table_family}'"""
+      )
 
   # Get source path information (needed for both validation strategies)
-  src_path = [
-    row['source_file_path']
-    for row in spark.sql(f"""
-        select t1.source_file_path
-        from {INGESTION_METADATA_TABLE} t1
-        inner join {INGESTION_AUDIT_TABLE} t2
-            on (t1.table_name = t2.target_table_name and t1.batch_load_id = t2.batch_load_id)
-        where t2.status = 'COMPLETED'
-          and table_name = '{tgt_table}'
-          and t2.batch_load_id = (
-              select max(batch_load_id) as max_batch_load_id
-              from {INGESTION_AUDIT_TABLE}
-              where status = 'COMPLETED'
-                and target_table_name = '{tgt_table}'
-          )
-        """
-    ).collect()
-    ]
+#   src_path = [
+#     row['source_file_path']
+#     for row in spark.sql(f"""
+#         select t1.source_file_path
+#         from {INGESTION_METADATA_TABLE} t1
+#         inner join {INGESTION_AUDIT_TABLE} t2
+#             on (t1.table_name = t2.target_table_name and t1.batch_load_id = t2.batch_load_id)
+#         where t2.status = 'COMPLETED'
+#           and table_name = '{tgt_table}'
+#           and t2.batch_load_id = (
+#               select max(batch_load_id) as max_batch_load_id
+#               from {INGESTION_AUDIT_TABLE}
+#               where status = 'COMPLETED'
+#                 and target_table_name = '{tgt_table}'
+#           )
+#         """
+#     ).collect()
+#     ]
+  
+  # Get all eligible batches and their source paths at once
+  ingestion_data = spark.sql(f"""
+    select
+        t1.source_file_path,
+        t2.batch_load_id
+    from {INGESTION_METADATA_TABLE} t1
+    inner join {INGESTION_AUDIT_TABLE} t2
+        on (t1.table_name = t2.target_table_name and t1.batch_load_id = t2.batch_load_id)
+    inner join {INGESTION_CONFIG_TABLE} t4
+        on t1.table_name = concat_ws('.', t4.target_catalog, t4.target_schema, t4.target_table)
+    left join (select batch_load_id,validation_run_status,row_number() over(partition by batch_load_id order by validation_run_start_time desc) rnk from (
+select explode(batch_load_id) as batch_load_id,validation_run_status,validation_run_start_time from {VALIDATION_LOG_TABLE})) t3
+        on t3.batch_load_id = t2.batch_load_id
+    where t2.status = 'COMPLETED'
+        and t1.table_name = '{tgt_table}'
+        and (
+            (t4.write_mode = 'overwrite' and t2.batch_load_id = (
+                select max(batch_load_id)
+                from {INGESTION_AUDIT_TABLE}
+                where status = 'COMPLETED'
+                    and target_table_name = '{tgt_table}'
+            ))
+            or t4.write_mode <> 'overwrite'
+        )
+        and ((t3.validation_run_status <> 'SUMMARY_SUCCESS' AND t3.rnk = 1)
+            or t3.batch_load_id is null)
+    """).collect()
+  
+  # Handle case where no batches are found
+  if not ingestion_data:
+      logger.warning(f"No batches found for validation for table: {tgt_table}")
+      return
+  
+  # Collect all batch_load_ids and source paths at once
+  batch_load_ids = list(set([row['batch_load_id'] for row in ingestion_data]))
+  src_path = [row['source_file_path'] for row in ingestion_data]
+
+  logger.info(f"Processing all eligible batches at once: {batch_load_ids}")
+  logger.info(f"Total source files across all batches: {len(src_path)}")
+  
 
 #   logger.info(f"Source Files: {src_path}")
   base_file_path = None
@@ -1804,22 +1847,30 @@ def trigger_validation(table_mapping):
   logger.info("capturing target schema")
   captureTgtSchema(tgt_warehouse, tgt_table, tgt_jdbc_options, table_mapping)
 
+  logger.info(f"""Triggering Validation Run for Workflow: ", {workflow_name}, Table Family: {table_family})""")
+  logger.info(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
+  batch_load_id_array = f"array({','.join([repr(x) for x in batch_load_ids])})"
+
   # Check validation strategy based on primary key availability
   validation_strategy = table_mapping.validation_strategy
   logger.info(f"validation_strategy: {validation_strategy}")
+
+  spark.sql(f"INSERT INTO {validation_log_table} (batch_load_id,workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ({batch_load_id_array},'{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
   
   if validation_strategy == "hash_based":
     logger.info(f"Running hash-based validation for {table_family}")
-    return run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_path, src_path_part_params)
+    return run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_path, src_path_part_params,batch_load_ids)
   else:
     logger.info(f"Running primary key-based validation for {table_family}")
     # Continue with existing primary key-based validation flow
 
   try:
       
-    logger.info(f"""Triggering Validation Run for Workflow: ", {workflow_name}, Table Family: {table_family})""")
-    logger.info(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
-    spark.sql(f"INSERT INTO {validation_log_table} (workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ('{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
+    # logger.info(f"""Triggering Validation Run for Workflow: ", {workflow_name}, Table Family: {table_family})""")
+    # logger.info(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
+    # batch_load_id_array = f"array({','.join([repr(x) for x in batch_load_ids])})"
+
+    # spark.sql(f"INSERT INTO {validation_log_table} (batch_load_id,workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ({batch_load_id_array},'{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
     
     src_hash_validation_tbl = None
     tgt_hash_validation_tbl = None
@@ -1834,7 +1885,7 @@ def trigger_validation(table_mapping):
         logger.info("capturing target snapshot hash")
         log_update("TGT_SNAPSHOT_HASH_INITIATED")
         tgt_hash_validation_tbl = captureTgtTableHash(
-        tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping)
+        tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping,batch_load_ids=batch_load_ids)
         log_update("TGT_SNAPSHOT_HASH_COMPLETED")
 
         logger.info("capturing hash anomalies")
@@ -1856,7 +1907,7 @@ def trigger_validation(table_mapping):
     logger.info("capturing target snapshot")
     log_update("TGT_SNAPSHOT_INITIATED")
     tgt_validation_tbl = captureTgtTable(
-        tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping)
+        tgt_warehouse, tgt_table, tgt_jdbc_options, tgt_sql_override, tgt_data_load_filter, table_mapping,batch_load_ids=batch_load_ids)
     log_update("TGT_SNAPSHOT_COMPLETED")
 
     logger.info("creating normalized view")
@@ -1959,7 +2010,7 @@ else :
 
 # COMMAND ----------
 
-def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_path=None, src_path_part_params=None):
+def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_path=None, src_path_part_params=None,batch_load_ids=None):
     """
     Hash-based validation flow for tables without primary keys
     Always runs quick validation since full validation is designed for primary key-based validation
@@ -1996,16 +2047,16 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_
           AND table_family = '{table_family}'""")
     
     try:
-        print(f"Running hash-based validation for {table_family}")
-        print(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
+        # print(f"Running hash-based validation for {table_family}")
+        # print(f"streamlit_user_name: {streamlit_user_name} | streamlit_user_email: {streamlit_user_email}")
         
-        # Insert initial validation log entry
-        spark.sql(f"INSERT INTO {validation_log_table} (workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ('{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
+        # # Insert initial validation log entry
+        # spark.sql(f"INSERT INTO {validation_log_table} (batch_load_id, workflow_name, src_warehouse, src_table, tgt_warehouse, tgt_table, validation_run_status, validation_run_start_time, streamlit_user_name, streamlit_user_email, iteration_name, table_family) VALUES ({batch_load_ids},'{workflow_name}', '{src_warehouse}', '{src_table}','{tgt_warehouse}','{tgt_table}','STARTED',now(), '{streamlit_user_name}', '{streamlit_user_email}','{iteration_name}','{table_family}')")
         
         log_update("HASH_VALIDATION_INITIATED")
         
         # Use source path information passed from trigger_validation
-        logger.info(f"Source Files: {src_path}")
+        # logger.info(f"Source Files: {src_path}")
         logger.info(f"src_path_part_params: {src_path_part_params}")
         
         # 1. Get table columns for hash validation
@@ -2028,7 +2079,7 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_
         logger.info("capturing target snapshot hash")
         tgt_hash_validation_tbl = captureTgtTableHash(
             table_mapping.tgt_warehouse, table_mapping.tgt_table, table_mapping.tgt_jdbc_options, 
-            table_mapping.tgt_sql_override, table_mapping.tgt_data_load_filter, table_mapping)
+            table_mapping.tgt_sql_override, table_mapping.tgt_data_load_filter, table_mapping,batch_load_ids=batch_load_ids)
         
         log_update("HASH_TABLE_CREATION_COMPLETED")
         
