@@ -1665,7 +1665,7 @@ def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_valid
   metrics['hash_src_delta_table_size'] = "NULL"
   metrics['hash_tgt_delta_table_size'] = "NULL"
 
-  if metrics['quick_validation']:
+  if metrics['quick_validation'] and table_mapping.validation_strategy != "hash_based":
     metrics['hash_src_records'] = spark.sql(f'select count(*) hash_src_records from {src_hash_validation_tbl} where iteration_name__mmp ="{iteration_name}"').collect()[0]["hash_src_records"]
     metrics['hash_tgt_records'] = spark.sql(f'select count(*) hash_tgt_records from {tgt_hash_validation_tbl} where iteration_name__mmp ="{iteration_name}"').collect()[0]["hash_tgt_records"]
     metrics['hash_mismatches'] = spark.sql(f'select count(comparison_type) hash_mismatches from {TABLE_HASH_ANOMALIES} where iteration_name ="{iteration_name}" and workflow_name="{workflow_name}" and table_family="{table_family}" and comparison_type= "mismatches"').collect()[0]["hash_mismatches"]
