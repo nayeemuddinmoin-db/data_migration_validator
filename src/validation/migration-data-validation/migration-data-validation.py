@@ -13,6 +13,7 @@
 # COMMAND ----------
 
 import logging
+from tkinter import NO
 # ---- Logging Setup ----
 logging.basicConfig(
     format="%(asctime)s.%(msecs)03d [%(filename)s:%(lineno)d] - %(levelname)s - %(message)s",
@@ -1624,8 +1625,8 @@ def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_valid
   if src_hash_validation_tbl and tgt_hash_validation_tbl and table_mapping.validation_strategy == "hash_based":
     # Hash-based validation metrics
     print("Capturing metrics for hash-based validation...")
-    metrics['src_records'] = spark.sql(f'select count(*) as src_records from {src_hash_validation_tbl}').collect()[0]["src_records"]
-    metrics['tgt_records'] = spark.sql(f'select count(*) as tgt_records from {tgt_hash_validation_tbl}').collect()[0]["tgt_records"]
+    metrics['src_records'] = spark.sql(f'select count(*) as src_records from {src_hash_validation_tbl} where iteration_name__mmp ="{iteration_name}"').collect()[0]["src_records"]
+    metrics['tgt_records'] = spark.sql(f'select count(*) as tgt_records from {tgt_hash_validation_tbl} where iteration_name__mmp ="{iteration_name}"').collect()[0]["tgt_records"]
     
     # Use hash anomalies table for hash-based validation
     hash_anomalies_table_name = f"{validation_data_db}.{workflow_name}___{table_family.replace('.', '_')}__hash_anomalies"
@@ -2108,6 +2109,11 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_
         
         log_update("SUCCESS")
         print(f"Completed Hash-based Validation Run for Workflow: {workflow_name}; Table Family: {table_family}")
+
+        logger.info("purging temp tables")
+        log_update("PURGE_TABLES_INITIATED")
+        purge_tables(retain_tables_list=None,src_hash_validation_tbl=src_hash_validation_tbl,tgt_hash_validation_tbl=tgt_hash_validation_tbl,full_outer_table=None)
+        log_update("PURGE_TABLES_COMPLETED")
         
         return {
             'src_hash_table': src_hash_validation_tbl,
