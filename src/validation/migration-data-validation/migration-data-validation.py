@@ -13,7 +13,7 @@
 # COMMAND ----------
 
 import logging
-from tkinter import NO
+# from tkinter import NO
 # ---- Logging Setup ----
 logging.basicConfig(
     format="%(asctime)s.%(msecs)03d [%(filename)s:%(lineno)d] - %(levelname)s - %(message)s",
@@ -1595,13 +1595,13 @@ def create_normailzed_views(
 
 # COMMAND ----------
 
-def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_validation_tbl, src_hash_validation_tbl, tgt_hash_validation_tbl,batch_load_id=None):
+def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_validation_tbl, src_hash_validation_tbl, tgt_hash_validation_tbl,batch_load_id_array=None):
 
   metrics = {}
   metrics['iteration_name'] = iteration_name
   metrics['streamlit_user_name'] = streamlit_user_name
   metrics['streamlit_user_email'] = streamlit_user_email
-  metrics['batch_load_id'] = batch_load_id
+  metrics['batch_load_id'] = batch_load_id_array
   metrics['workflow_name'] = workflow_name = table_mapping.workflow_name
   metrics['table_family'] = table_family = table_mapping.table_family
   metrics['src_wrhse'] = table_mapping.src_warehouse
@@ -1686,13 +1686,13 @@ def purge_tables(retain_tables_list,src_validation_tbl,tgt_validation_tbl,full_o
     logger.info(f"Retain Table List: {retain_list}")
     if "src_tbl" not in retain_list: 
         logger.info(f'DROPPING table {src_validation_tbl}')
-        spark.sql(f'DROP TABLE {src_validation_tbl}')
+        spark.sql(f'DROP TABLE IF EXISTS {src_validation_tbl}')
     if "tgt_tbl" not in retain_list: 
         logger.info(f'DROPPING table {tgt_validation_tbl}')
-        spark.sql(f'DROP TABLE {tgt_validation_tbl}')
-    if "full_outer" not in retain_list:
+        spark.sql(f'DROP TABLE IF EXISTS {tgt_validation_tbl}')
+    if "full_outer" not in retain_list and full_outer_table is not None:
         logger.info(f'DROPPING table {full_outer_table}')
-        spark.sql(f'DROP TABLE {full_outer_table}')
+        spark.sql(f'DROP TABLE IF EXISTS {full_outer_table}')
 
 # COMMAND ----------
 
@@ -1794,6 +1794,7 @@ def trigger_validation(table_mapping):
         on (t1.table_name = t2.target_table_name and t1.batch_load_id = t2.batch_load_id)
     inner join {INGESTION_CONFIG_TABLE} t4
         on t1.table_name = concat_ws('.', t4.target_catalog, t4.target_schema, t4.target_table)
+        and t2.group_name = t4.group_name
     left join (select batch_load_id,validation_run_status,row_number() over(partition by batch_load_id order by validation_run_start_time desc) rnk from (
 select explode(batch_load_id) as batch_load_id,validation_run_status,validation_run_start_time from {VALIDATION_LOG_TABLE})) t3
         on t3.batch_load_id = t2.batch_load_id
@@ -1959,7 +1960,7 @@ select explode(batch_load_id) as batch_load_id,validation_run_status,validation_
 
     logger.info("capturing metrics")
     log_update("METRICS_CAPTURE_INITIATED")
-    table_metrics = capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_validation_tbl, src_hash_validation_tbl, tgt_hash_validation_tbl)
+    table_metrics = capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_validation_tbl, src_hash_validation_tbl, tgt_hash_validation_tbl,batch_load_id_array)
     log_update("METRICS_CAPTURE_COMPLETED")
 
     logger.info("purging temp tables")
@@ -2023,6 +2024,7 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_
         Validation results
     """
     # Extract variables for logging
+    batch_load_id_array = f"array({','.join([repr(x) for x in batch_load_ids])})"
     workflow_name = table_mapping.workflow_name
     table_family = table_mapping.table_family
     src_warehouse = table_mapping.src_warehouse
@@ -2102,18 +2104,18 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_
         # Generate validation summary for hash-based validation
         log_update("HASH_SUMMARY_INITIATED")
         print("Generating validation summary for hash-based validation...")
-        table_metrics = capture_metrics(iteration_name, table_mapping, None, None, src_hash_validation_tbl, tgt_hash_validation_tbl)
+        table_metrics = capture_metrics(iteration_name, table_mapping, None, None, src_hash_validation_tbl, tgt_hash_validation_tbl,batch_load_id_array)
         runner(table_metrics)
         print(f"Completed Validation Summary for Hash-based Workflow: {table_mapping.workflow_name}; Table Family: {table_mapping.table_family}")
-        log_update("HASH_SUMMARY_COMPLETED")
+        # log_update("HASH_SUMMARY_COMPLETED")
         
-        log_update("SUCCESS")
+        log_update("SUMMARY_SUCCESS")
         print(f"Completed Hash-based Validation Run for Workflow: {workflow_name}; Table Family: {table_family}")
 
-        logger.info("purging temp tables")
-        log_update("PURGE_TABLES_INITIATED")
-        purge_tables(retain_tables_list=None,src_hash_validation_tbl=src_hash_validation_tbl,tgt_hash_validation_tbl=tgt_hash_validation_tbl,full_outer_table=None)
-        log_update("PURGE_TABLES_COMPLETED")
+        # logger.info("purging temp tables")
+        # log_update("PURGE_TABLES_INITIATED")
+        # purge_tables(retain_tables_list=None,src_validation_tbl=src_hash_validation_tbl,tgt_validation_tbl=tgt_hash_validation_tbl,full_outer_table=None)
+        # log_update("PURGE_TABLES_COMPLETED")
         
         return {
             'src_hash_table': src_hash_validation_tbl,

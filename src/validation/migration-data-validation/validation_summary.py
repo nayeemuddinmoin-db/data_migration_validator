@@ -133,6 +133,7 @@ from {TERADATA_SCHEMA_STORE})x'''
 # COMMAND ----------
 
 def save_metrics(table_metrics):
+    batch_load_id = table_metrics["batch_load_id"]
     workflow_name = table_metrics["workflow_name"]
     table_family = table_metrics["table_family"]
     src_wrhse = table_metrics["src_wrhse"]
@@ -173,7 +174,8 @@ def save_metrics(table_metrics):
     
     spark.sql(
         f"""INSERT INTO
-            { VALIDATION_SUMMARY_TABLE } (
+            {VALIDATION_SUMMARY_TABLE} (
+              batch_load_id,
               iteration_name,
               workflow_name,
               src_warehouse,
@@ -200,6 +202,7 @@ def save_metrics(table_metrics):
             )
           VALUES
             (
+              {batch_load_id},
               '{iteration_name}',
               '{workflow_name}',
               '{src_wrhse}',

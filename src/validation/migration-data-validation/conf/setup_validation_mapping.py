@@ -12,7 +12,7 @@ USING (
   select
     -- monotonically_increasing_id()+1+{MAX_ENTRY_ID} as entry_id,
     row_number() over(order by concat_ws('_',target_catalog,target_schema,target_table)) + {MAX_ENTRY_ID} as entry_id, 
-    'wf_dmv_validator_runner' as workflow_name,
+    concat('wf_validation_',group_name) as workflow_name,
     concat_ws('_',target_catalog,target_schema,target_table) as table_family,
     'databricks' as src_connection_name,
     concat_ws('.','source_system',source_schema, source_table) as src_table,

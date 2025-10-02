@@ -18,7 +18,7 @@ APP_LIB_VOLUME_PATH = "/Volumes/cat_ril_nayeem_03/dmvdb/lib"
 # COMMAND ----------
 
 JOB_RUN_AS_USER = "rahul.singha@databricks.com" # App ID in case of SPN "5087f00f-2031-47a1-88a4-32844bcd9cbb" 
-VALIDATION_WORKFLOW_NAME = "wf_dmv_validator_runner_nayeem2"
+VALIDATION_WORKFLOW_NAME = "wf_dmv_validator_runner"
 VALIDATION_WORKFLOW_OWNER = "rahul.singha@databricks.com"
 
 # COMMAND ----------
