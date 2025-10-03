@@ -224,3 +224,23 @@ PARTITIONED BY (iteration_name STRING, workflow_name STRING, table_family STRING
 ''')
 except Exception as e:
   print(str(e).split("\n")[0])
+
+# COMMAND ----------
+
+try:
+  spark.sql(f'''
+  CREATE TABLE {MISMATCH_METRICS} (
+  run_timestamp TIMESTAMP,
+  table_family STRING,
+  tgt_tbl STRING,
+  col_name STRING,
+  addtnl_filter STRING,
+  iteration_name STRING,
+  total_overlaps BIGINT,
+  total_matches BIGINT,
+  not_null_matches BIGINT,
+  mismatches BIGINT)
+)
+''')
+except Exception as e:
+  print(str(e).split("\n")[0])

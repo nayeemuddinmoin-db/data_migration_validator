@@ -40,7 +40,7 @@ iteration_name = dbutils.widgets.get("01-iteration_name")
 # mismatch_exclude_fields_string = table_mapping["mismatch_exclude_fields"]
 
 # print(src_wrhse, tgt_wrhse, src_tbl, tgt_tbl)
-def runner(table_metrics):
+def runner(table_metrics,is_hash_based=False):
   # global workflow_name, src_wrhse, src_tbl, tgt_wrhse, tgt_tbl, table_family, mismatch_exclude_fields_string
 
   print(f'''Triggering the summary report generation for workflow_name: {table_metrics["workflow_name"]} and table_family {table_metrics["table_family"]}''')
@@ -51,7 +51,7 @@ def runner(table_metrics):
   schema_validation(table_metrics)
   data_type_compatibility_check(table_metrics)
   mismatch_status(table_metrics)
-  extras_status(table_metrics)
+  extras_status(table_metrics,is_hash_based)
 
 # COMMAND ----------
 
@@ -587,7 +587,7 @@ def mismatch_status(table_metrics):
 # COMMAND ----------
 
 # DBTITLE 1,Extra Records Status
-def extras_status(table_metrics):
+def extras_status(table_metrics,is_hash_based=False):
 
   iteration_name = table_metrics["iteration_name"]
   table_family = table_metrics["table_family"]
@@ -597,8 +597,11 @@ def extras_status(table_metrics):
   tgt_wrhse = table_metrics["tgt_wrhse"]
   tgt_tbl = table_metrics["tgt_tbl"]
   validation_data_db = table_metrics["validation_data_db"]
-  anomalies_table_name = f"{validation_data_db}.{workflow_name}___{table_family}__anomalies"
-  extras = spark.sql(f"""select count(*) from {anomalies_table_name} where iteration_name = '{iteration_name}' and `type` in ("tgt_extras","src_extras")""").collect()[0][0]
+  anomalies_table_name = table_metrics["anomalies_table_name"]
+  if is_hash_based:
+    extras = spark.sql(f"""select count(*) from {anomalies_table_name} where iteration_name = '{iteration_name}' and `comparison_type` in ("tgt_extras","src_extras")""").collect()[0][0]
+  else:
+    extras = spark.sql(f"""select count(*) from {anomalies_table_name} where iteration_name = '{iteration_name}' and `type` in ("tgt_extras","src_extras")""").collect()[0][0]
   extras_status = "SUCCESS" if extras == 0 else "FAILED"
   print(f"iteration_name: {iteration_name} | table_family: {table_family} | extras_status: {extras_status}")
 

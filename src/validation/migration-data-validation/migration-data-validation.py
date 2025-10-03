@@ -1618,7 +1618,11 @@ def capture_metrics(iteration_name, table_mapping, src_validation_tbl, tgt_valid
   metrics['src_data_load_filter'] = table_mapping.src_data_load_filter
   metrics['tgt_data_load_filter'] = table_mapping.tgt_data_load_filter
   metrics['validation_data_db'] = validation_data_db = table_mapping.validation_data_db
-  metrics['anomalies_table_name'] = anomalies_table_name = f"{validation_data_db}.{workflow_name}___{table_family}__anomalies"
+  if table_mapping.validation_strategy != "hash_based":
+    metrics['anomalies_table_name'] = anomalies_table_name = f"{validation_data_db}.{workflow_name}___{table_family}__anomalies"
+  else:
+    metrics['anomalies_table_name'] = anomalies_table_name = f"{validation_data_db}.{workflow_name}___{table_family.replace('.', '_')}__hash_anomalies"
+  
   metrics['quick_validation'] = table_mapping.quick_validation
 
   # Check if this is hash-based validation (src_hash_validation_tbl and tgt_hash_validation_tbl are provided)
@@ -2105,7 +2109,7 @@ def run_hash_based_validation(table_mapping, run_timestamp, iteration_name, src_
         log_update("HASH_SUMMARY_INITIATED")
         print("Generating validation summary for hash-based validation...")
         table_metrics = capture_metrics(iteration_name, table_mapping, None, None, src_hash_validation_tbl, tgt_hash_validation_tbl,batch_load_id_array)
-        runner(table_metrics)
+        runner(table_metrics,is_hash_based=True)
         print(f"Completed Validation Summary for Hash-based Workflow: {table_mapping.workflow_name}; Table Family: {table_mapping.table_family}")
         # log_update("HASH_SUMMARY_COMPLETED")
         
