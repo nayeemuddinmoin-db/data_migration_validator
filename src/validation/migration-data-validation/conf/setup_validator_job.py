@@ -38,7 +38,7 @@ wf_dmv_validator_runner_nayeem = Job.from_dict(
             {
                 "task_key": "tsk-dmv-validator-run",
                 "notebook_task": {
-                    "notebook_path": "../migration-data-validation",
+                    "notebook_path": notebook_path,
                     "base_parameters": {
                         "00-triggered_from_workflow": "",
                         "01-iteration_name_suffix": "",

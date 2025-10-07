@@ -121,13 +121,23 @@ except Exception as e:
 
 # COMMAND ----------
 
-import os
-spark.read.option("header","true")\
-    .option("multiLine", "true")\
-    .option("escape","\"")\
-    .option("inferSchema", "true")\
-    .csv("file://"+os.path.abspath("./data_type_compatibility_matrix.csv"))\
-    .write.mode("overwrite").saveAsTable(f'''{DATA_TYPE_COMPATIBILITY_MATRIX}''')
+# Commenting to implement parquet file reading and appending to the table
+# import os
+# spark.read.option("header","true")\
+#     .option("multiLine", "true")\
+#     .option("escape","\"")\
+#     .option("inferSchema", "true")\
+#     .csv("file://"+os.path.abspath("./data_type_compatibility_matrix.csv"))\
+#     .write.mode("overwrite").saveAsTable(f'''{DATA_TYPE_COMPATIBILITY_MATRIX}''')
+
+# COMMAND ----------
+
+# Read parquet file from volume and write to DATA_TYPE_COMPATIBILITY_MATRIX
+try:
+  spark.read.parquet(f"{APP_LIB_VOLUME_PATH}/part-00000-tid-3427479233534503478-8910935c-34c2-48f9-93f1-7df241860b8e-7-1.c000.snappy.parquet")\
+      .write.mode("overwrite").saveAsTable(f'''{DATA_TYPE_COMPATIBILITY_MATRIX}''')
+except Exception as e:
+  print(str(e).split("\n")[0])
 
 # COMMAND ----------
 
